@@ -2,8 +2,8 @@ name: Smartsheet Tracker (monatlicher Snapshot)
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    - cron: '0 0 * * *'       # täglich um 00:00 UTC
+  workflow_dispatch:         # manueller Start möglich
 
 permissions:
   contents: write
@@ -11,13 +11,18 @@ permissions:
 jobs:
   tracker:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - uses: actions/setup-python@v4
-        with: python-version: '3.x'
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Run Smartsheet Tracker
         env:
