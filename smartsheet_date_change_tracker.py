@@ -29,7 +29,7 @@ except FileNotFoundError:
     headers = []
 
 changes = []
-log_headers_written = False
+log_headers_written = os.path.exists("date_changes_log.csv")
 
 for sheet_name, sheet_id in sheet_ids.items():
     try:
@@ -64,7 +64,7 @@ for sheet_name, sheet_id in sheet_ids.items():
 if changes:
     with open("date_changes_log.csv", "a", newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        if not os.path.exists("date_backup.csv"):
+        if not log_headers_written:
             writer.writerow(headers)
         for row in changes:
             writer.writerow(row)
