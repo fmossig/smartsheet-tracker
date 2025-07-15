@@ -1,0 +1,35 @@
+name: Smartsheet Tracker (with CSV commit)
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # alle 2 Stunden
+  workflow_dispatch:        # manuell auslösbar
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Smartsheet Tracker
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: python smartsheet_date_change_tracker.py
+
+      - name: Commit CSV result
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add date_changes_log.csv
+          git commit -m "Update log file from tracker run" || echo "No changes to commit"
+          git push
