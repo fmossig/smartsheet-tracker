@@ -1,10 +1,9 @@
-name: Smartsheet Tracker (monatlicher Snapshot + E‑Mail)
+name: Smartsheet Tracker (monatlicher Snapshot)
 
 on:
   schedule:
     - cron: '0 0 * * *'      # täglich um 00:00 UTC
-    - cron: '0 0 1 * *'      # 1. jedes Monats um 00:00 UTC
-  workflow_dispatch:
+  workflow_dispatch:        # manueller Start möglich
 
 permissions:
   contents: write
@@ -13,41 +12,28 @@ jobs:
   tracker:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Python einrichten
+      - name: Set up Python
         uses: actions/setup-python@v4
-        with: python-version: '3.x'
+        with:
+          python-version: '3.x'
 
-      - name: Abhängigkeiten installieren
-        run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
 
-      - name: Tracker ausführen
+      - name: Run Smartsheet Tracker
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: python smartsheet_date_change_tracker.py
 
-      - name: Monats‑Snapshot pushen
+      - name: Commit monthly CSV snapshot
         run: |
           MONTH_YEAR=$(date +'%m.%Y')
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add -f date_changes_log_${MONTH_YEAR}.csv
-          git commit -m "Update log ${MONTH_YEAR}" || echo "No changes"
+          git commit -m "Update log ${MONTH_YEAR}" || echo "No changes to commit"
           git push
-
-      - name: Send monthly snapshot email
-        if: github.event_name == 'schedule' && startsWith(github.event.schedule.cron, '0 0 1')
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Smartsheet Snapshot ${{ steps.tracker.outputs.MONTH_YEAR }}"
-          body: |
-            Dein monatlicher Smartsheet‑Snapshot für ${{ steps.tracker.outputs.MONTH_YEAR }}.
-          to: f.mossig@rascom.at
-          from: "Tracker Bot <bot@example.com>"
-          attachments: date_changes_log_${{ steps.tracker.outputs.MONTH_YEAR }}.csv
