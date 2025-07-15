@@ -1,8 +1,7 @@
 name: Smartsheet Status Snapshot (manuell)
 
-# Nur manuell per „Run workflow“ im Actions‑Tab
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # nur manuell im Actions‑Tab
 
 permissions:
   contents: write
@@ -10,7 +9,6 @@ permissions:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -23,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install smartsheet-python-sdk python-dotenv
 
-      - name: Create status snapshot
+      - name: Create 30‑Day status snapshot
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: python smartsheet_status_snapshot.py
@@ -36,7 +34,7 @@ jobs:
             git config user.name "github-actions"
             git config user.email "actions@github.com"
             git add -f "$FILE"
-            git commit -m "Status‑Snapshot $DATE" || echo "No changes to commit"
+            git commit -m "Status‑Snapshot ${DATE}" || echo "No changes to commit"
             git push
           else
             echo "⚠️ Datei $FILE nicht gefunden – überspringe Commit."
