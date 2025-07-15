@@ -1,8 +1,8 @@
-name: Smartsheet Tracker
+name: Smartsheet Tracker (with CSV commit)
 
 on:
   schedule:
-    - cron: '5 */2 * * *'
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -25,3 +25,11 @@ jobs:
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: python smartsheet_date_change_tracker.py
+
+      - name: Commit CSV result
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add date_changes_log.csv
+          git commit -m "Update log file from tracker run" || echo "No changes to commit"
+          git push
