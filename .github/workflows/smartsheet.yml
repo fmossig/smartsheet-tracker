@@ -2,8 +2,8 @@ name: Smartsheet Tracker (monatlicher Snapshot)
 
 on:
   schedule:
-    - cron: '0 0 * * *'      # täglich um 00:00 UTC
-  workflow_dispatch:        # manueller Start möglich
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,17 +12,12 @@ jobs:
   tracker:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+      - uses: actions/setup-python@v4
+        with: python-version: '3.x'
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+      - run: pip install -r requirements.txt
 
       - name: Run Smartsheet Tracker
         env:
@@ -32,8 +27,15 @@ jobs:
       - name: Commit monthly CSV snapshot
         run: |
           MONTH_YEAR=$(date +'%m.%Y')
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add -f date_changes_log_${MONTH_YEAR}.csv
-          git commit -m "Update log ${MONTH_YEAR}" || echo "No changes to commit"
-          git push
+          FILE="date_changes_log_${MONTH_YEAR}.csv"
+
+          if [ -f "$FILE" ]; then
+            echo "✅ ${FILE} gefunden – committe es."
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add -f "$FILE"
+            git commit -m "Update log ${MONTH_YEAR}" || echo "🟡 No changes to commit"
+            git push
+          else
+            echo "⚠️ Datei ${FILE} nicht gefunden, überspringe Commit."
+          fi
