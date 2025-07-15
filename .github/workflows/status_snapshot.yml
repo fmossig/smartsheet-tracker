@@ -1,0 +1,44 @@
+name: Smartsheet Status Snapshot
+
+on:
+  schedule:
+    - cron: '0 1 * * *'       # täglich um 01:00 UTC
+  workflow_dispatch:          # manueller Start möglich
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Python installieren
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Abhängigkeiten installieren
+        run: pip install smartsheet-python-sdk python-dotenv
+
+      - name: Snapshot erstellen
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: python smartsheet_status_snapshot.py
+
+      - name: Commit Snapshot
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          FILE="status_snapshot_${DATE}.csv"
+          if [ -f "$FILE" ]; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add -f "$FILE"
+            git commit -m "Status‑Snapshot $DATE" || echo "Keine Änderungen"
+            git push
+          else
+            echo "🚫 Datei $FILE nicht gefunden – kein Commit."
+          fi
