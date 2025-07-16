@@ -2,7 +2,7 @@ name: Smartsheet Tracker (monatlicher Snapshot)
 
 on:
   schedule:
-    - cron: '0 0 * * *'       # täglich um 00:00 UTC
+    - cron: '0 3 1 * *'       # täglich um 00:00 UTC
   workflow_dispatch:         # manueller Start möglich
 
 permissions:
@@ -13,8 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Retry Checkout
+        uses: devops-infra/action-retry@v1
+        with:
+          retries: 3
+          command: actions/checkout@v3
 
       - name: Set up Python 3.x
         uses: actions/setup-python@v4
