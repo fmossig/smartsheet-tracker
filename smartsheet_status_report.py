@@ -31,7 +31,7 @@ def read_snapshot(date_str):
 
 
 def make_report():
-    # Setup mit UTC
+    # Setup
     now = datetime.now(timezone.utc)
     today = now.date()
     date_str = today.isoformat()
@@ -39,7 +39,7 @@ def make_report():
     cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
-    # PDF-Dokument
+    # PDF-Dokument anlegen
     doc = SimpleDocTemplate(
         pdf_file,
         pagesize=A4,
@@ -57,7 +57,7 @@ def make_report():
 
     # Deckblatt
     elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
-    elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d)}", styles['CoverInfo']))
+    elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['CoverInfo']))
     elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff_str}", styles['CoverInfo']))
     elems.append(PageBreak())
 
@@ -76,7 +76,9 @@ def make_report():
     chart.y = 15*mm
     chart.height = 80*mm
     chart.width = 150*mm
-    chart.data = [values]
+    # Einzelne Series mit einem Wert pro Gruppe um individuelle Farben zu ermöglichen
+    data_series = [[v] for v in values]
+    chart.data = data_series
     chart.categoryAxis.categoryNames = groups
     chart.categoryAxis.labels.boxAnchor = 'n'
     chart.valueAxis.valueMin = 0
@@ -85,14 +87,18 @@ def make_report():
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
     chart.valueAxis.gridStrokeColor = colors.lightgrey
 
-    # Balkenfarben: jeweils eigene Farbe pro Produktgruppe
-    chart.barFillColors = [colors.HexColor(COLORS[g]) for g in groups]
-    chart.strokeColor = None
+    # Balkenbreite anpassen (narrower)
+    chart.barWidth = chart.width / (len(values) * 2)
+
+    # Jeder Serie eigene Farbe
+    for idx, grp in enumerate(groups):
+        chart.bars[idx].fillColor = colors.HexColor(COLORS[grp])
+        chart.bars[idx].strokeColor = None
 
     # Daten-Labels über den Balken
     for idx, val in enumerate(values):
         label = String(
-            chart.x + (idx + 0.5) * (chart.width / len(values)),
+            chart.x + chart.barWidth/2 + idx * (chart.barWidth*2),
             chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6,
             str(val),
             fontName='Helvetica', fontSize=9, textAnchor='middle'
