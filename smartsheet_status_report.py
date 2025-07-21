@@ -94,12 +94,11 @@ def make_report():
     chart.groupSpacing = chart.barWidth / 2
 
     # Farben pro Balken und keine Umrandung
-    for s in chart.bars:
-        for idx, bar in enumerate(s):
-            bar.fillColor = colors.HexColor(COLORS[groups[idx]])
-            bar.strokeColor = None
+for idx, bar in enumerate(chart.bars):
+    bar.fillColor = colors.HexColor(COLORS[groups[idx]])
+    bar.strokeColor = None
 
-    # Labels über den Balken
+# Labels über den Balken
     for idx, val in enumerate(values):
         x = chart.x + chart.groupSpacing + idx * (chart.barWidth + chart.groupSpacing) + chart.barWidth/2
         y = chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6
