@@ -36,12 +36,17 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git fetch origin
-          git rebase origin/main || git pull --rebase
+
+          # Unstaged Changes stashen, Remote‑main updaten, dann Stash zurückholen
+          git stash --include-untracked
+          git pull --rebase origin main
+          git stash pop || true
+
           DATE=$(date +'%Y-%m-%d')
           SNAP="status/status_snapshot_${DATE}.csv"
           SUMM="status/status_summary_${DATE}.csv"
           PDF="status/status_report_${DATE}.pdf"
+
           git add -f "$SNAP" "$SUMM" "$PDF"
           git commit -m "Status Reports & PDF ${DATE}" || echo "No changes to commit"
           git push
