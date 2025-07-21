@@ -76,8 +76,6 @@ def make_report():
     chart.y = 15*mm
     chart.height = 80*mm
     chart.width = 150*mm
-
-    # Eine Serie mit je einem Wert pro Gruppe
     chart.data = [values]
     chart.categoryAxis.categoryNames = groups
     chart.categoryAxis.labels.boxAnchor = 'n'
@@ -94,11 +92,11 @@ def make_report():
     chart.groupSpacing = chart.barWidth / 2
 
     # Farben pro Balken und keine Umrandung
-for idx, bar in enumerate(chart.bars):
-    bar.fillColor = colors.HexColor(COLORS[groups[idx]])
-    bar.strokeColor = None
+    for idx, bar in enumerate(chart.bars[0]):
+        bar.fillColor = colors.HexColor(COLORS[groups[idx]])
+        bar.strokeColor = None
 
-# Labels über den Balken
+    # Labels über den Balken
     for idx, val in enumerate(values):
         x = chart.x + chart.groupSpacing + idx * (chart.barWidth + chart.groupSpacing) + chart.barWidth/2
         y = chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6
