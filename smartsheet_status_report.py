@@ -39,7 +39,7 @@ def make_report():
     cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
-    # PDF-Dokument anlegen
+    # PDF-Dokument
     doc = SimpleDocTemplate(
         pdf_file,
         pagesize=A4,
@@ -76,9 +76,8 @@ def make_report():
     chart.y = 15*mm
     chart.height = 80*mm
     chart.width = 150*mm
-    # Einzelne Series mit einem Wert pro Gruppe um individuelle Farben zu ermöglichen
-    data_series = [[v] for v in values]
-    chart.data = data_series
+    # Series: one value per group
+    chart.data = [[v] for v in values]
     chart.categoryAxis.categoryNames = groups
     chart.categoryAxis.labels.boxAnchor = 'n'
     chart.valueAxis.valueMin = 0
@@ -86,28 +85,23 @@ def make_report():
     chart.valueAxis.valueMax = max_val * 1.1
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
     chart.valueAxis.gridStrokeColor = colors.lightgrey
-
-    # Balkenbreite anpassen (narrower)
+    # Adjust bar width
     chart.barWidth = chart.width / (len(values) * 2)
 
-    # Jeder Bar eigene Farbe und keine Umrandung
-# ReportLab erzeugt BarShapes unter chart.bars.items
-for idx, grp in enumerate(groups):
-    try:
-        bar_shape = chart.bars.items[idx]
-        bar_shape.fillColor = colors.HexColor(COLORS[grp])
-        bar_shape.strokeColor = None
-    except Exception:
-        pass
+    # Farben und Ränder
+    for idx, grp in enumerate(groups):
+        try:
+            bar = chart.bars[idx]
+            bar.fillColor = colors.HexColor(COLORS[grp])
+            bar.strokeColor = None
+        except Exception:
+            pass
 
-# Daten-Labels über den Balken
+    # Daten-Labels
     for idx, val in enumerate(values):
-        label = String(
-            chart.x + chart.barWidth/2 + idx * (chart.barWidth*2),
-            chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6,
-            str(val),
-            fontName='Helvetica', fontSize=9, textAnchor='middle'
-        )
+        x = chart.x + chart.barWidth/2 + idx * (chart.barWidth*2)
+        y = chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6
+        label = String(x, y, str(val), fontName='Helvetica', fontSize=9, textAnchor='middle')
         drawing.add(label)
 
     drawing.add(chart)
