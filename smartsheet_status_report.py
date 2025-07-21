@@ -77,41 +77,36 @@ def make_report():
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
 
-    # Bar-Chart erstellen
+        # Bar-Chart manuell zeichnen
     drawing = Drawing(180*mm, 100*mm)
-    chart = VerticalBarChart()
-    chart.x = 15*mm
-    chart.y = 15*mm
-    chart.height = 80*mm
-    chart.width = 150*mm
-    chart.data = [values]
-    chart.categoryAxis.categoryNames = groups
-    chart.categoryAxis.labels.boxAnchor = 'n'
+    chart_width = 150*mm
+    chart_height = 80*mm
+    origin_x = 15*mm
+    origin_y = 15*mm
 
-    # Achsen
-    chart.valueAxis.valueMin = 0
     max_val = max(values) if values else 1
-    chart.valueAxis.valueMax = max_val * 1.1
-    chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
-    chart.valueAxis.gridStrokeColor = colors.lightgrey
+    # Abstände und Balkenbreite
+    num = len(groups)
+    spacing = chart_width / (num * 1.5)
+    bar_width = chart_width / (num * 1.2)
 
-    # Layout der Balken
-    chart.barWidth = chart.width / (len(values) * 1.5)
-    chart.groupSpacing = chart.barWidth / 2
+    for idx, grp in enumerate(groups):
+        val = values[idx]
+        x = origin_x + spacing/2 + idx * (bar_width + spacing)
+        height = (val / max_val) * chart_height
+        # Balken zeichnen
+        from reportlab.graphics.shapes import Rect
+        bar = Rect(x, origin_y, bar_width, height,
+                   fillColor=colors.HexColor(COLORS[grp]), strokeColor=None)
+        drawing.add(bar)
+        # Wert-Label über Balken
+        drawing.add(String(x + bar_width/2, origin_y + height + 4,
+                           str(val), fontName='Helvetica', fontSize=9, textAnchor='middle'))
+        # Gruppen-Label unter Balken
+        drawing.add(String(x + bar_width/2, origin_y - 10,
+                           grp, fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
-    # Farben und Rahmen
-    for idx, bar in enumerate(chart.bars[0]):
-        bar.fillColor = colors.HexColor(COLORS[groups[idx]])
-        bar.strokeColor = None
-
-    # Daten-Labels
-    for idx, val in enumerate(values):
-        x = chart.x + chart.groupSpacing + idx * (chart.barWidth + chart.groupSpacing) + chart.barWidth/2
-        y = chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6
-        label = String(x, y, str(val), fontName='Helvetica', fontSize=9, textAnchor='middle')
-        drawing.add(label)
-
-    drawing.add(chart)
+    elems.append(drawing)
     elems.append(drawing)
 
     # Fußzeile
