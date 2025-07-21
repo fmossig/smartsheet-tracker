@@ -85,17 +85,16 @@ def make_report():
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
     chart.valueAxis.gridStrokeColor = colors.lightgrey
 
-    # Balkenfarben und keine Umrandung und Labels
-    for idx, grp in enumerate(groups):
-        # Zugriff auf den idx-ten Bar in der ersten Serie
-        bar = chart.bars[idx]
-        bar.fillColor = colors.HexColor(COLORS[grp])
-        bar.strokeColor = None
-        # Wert über dem Balken
+    # Balkenfarben: jeweils eigene Farbe pro Produktgruppe
+    chart.barFillColors = [colors.HexColor(COLORS[g]) for g in groups]
+    chart.strokeColor = None
+
+    # Daten-Labels über den Balken
+    for idx, val in enumerate(values):
         label = String(
             chart.x + (idx + 0.5) * (chart.width / len(values)),
-            chart.y + (values[idx] / chart.valueAxis.valueMax) * chart.height + 6,
-            str(values[idx]),
+            chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6,
+            str(val),
             fontName='Helvetica', fontSize=9, textAnchor='middle'
         )
         drawing.add(label)
