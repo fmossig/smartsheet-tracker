@@ -87,8 +87,8 @@ def make_report():
 
     # Balkenfarben und keine Umrandung und Labels
     for idx, grp in enumerate(groups):
-        # direkt die Serie-0 Bar
-        bar = chart.bars[0][idx]
+        # Zugriff auf den idx-ten Bar in der ersten Serie
+        bar = chart.bars[idx]
         bar.fillColor = colors.HexColor(COLORS[grp])
         bar.strokeColor = None
         # Wert über dem Balken
