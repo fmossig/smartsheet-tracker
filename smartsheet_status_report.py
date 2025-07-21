@@ -39,7 +39,7 @@ def make_report():
     cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
-    # PDF-Dokument anlegen
+    # PDF-Dokument
     doc = SimpleDocTemplate(
         pdf_file,
         pagesize=A4,
@@ -82,28 +82,26 @@ def make_report():
     chart.categoryAxis.categoryNames = groups
     chart.categoryAxis.labels.boxAnchor = 'n'
 
-    # Achsen
+    # Achsen und Gitterlinien
     chart.valueAxis.valueMin = 0
     max_val = max(values) if values else 1
     chart.valueAxis.valueMax = max_val * 1.1
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
     chart.valueAxis.gridStrokeColor = colors.lightgrey
 
-    # Balkenbreite
+    # Balkenbreite und Abstand
     chart.barWidth = chart.width / (len(values) * 1.5)
+    chart.groupSpacing = chart.barWidth / 2
 
-    # Farben und Ränder für jeden Balken
-    for idx, grp in enumerate(groups):
-        try:
-            bar = chart.bars[idx]
-            bar.fillColor = colors.HexColor(COLORS[grp])
+    # Farben pro Balken und keine Umrandung
+    for s in chart.bars:
+        for idx, bar in enumerate(s):
+            bar.fillColor = colors.HexColor(COLORS[groups[idx]])
             bar.strokeColor = None
-        except Exception:
-            pass
 
-    # Werte über den Balken
+    # Labels über den Balken
     for idx, val in enumerate(values):
-        x = chart.x + bar.width/2 + idx * (bar.width + chart.groupSpacing)
+        x = chart.x + chart.groupSpacing + idx * (chart.barWidth + chart.groupSpacing) + chart.barWidth/2
         y = chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6
         label = String(x, y, str(val), fontName='Helvetica', fontSize=9, textAnchor='middle')
         drawing.add(label)
@@ -118,7 +116,6 @@ def make_report():
     # PDF bauen
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
-
 
 if __name__ == "__main__":
     make_report()
