@@ -2,8 +2,7 @@ import csv, os
 from datetime import datetime, timedelta, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-from reportlab.graphics.shapes import Drawing, String
-from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.shapes import Drawing, String, Rect
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
@@ -77,21 +76,18 @@ def make_report():
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
 
-            # Bar-Chart manuell zeichnen
-    # Zeichnungsfläche anpassen auf nutzbare Breite (A4 Breite 210mm minus 2*20mm Rand)
-    usable_width = (210 - 2*20) * mm
-    chart_width = usable_width
+    # Bar-Chart manuell zeichnen
+    usable_width = (210 - 2*20) * mm  # A4 Breite minus Ränder
     chart_height = 80*mm
     origin_x = 0
     origin_y = 15*mm
 
     max_val = max(values) if values else 1
     num = len(groups)
-    spacing = chart_width / (num * 1.5)
-    bar_width = chart_width / (num * 1.2)
+    spacing = usable_width / (num * 1.5)
+    bar_width = usable_width / (num * 1.2)
 
     drawing = Drawing(usable_width, chart_height + origin_y)
-    from reportlab.graphics.shapes import Rect
     for idx, grp in enumerate(groups):
         val = values[idx]
         x = origin_x + spacing/2 + idx * (bar_width + spacing)
@@ -107,17 +103,16 @@ def make_report():
         drawing.add(String(x + bar_width/2, origin_y - 10,
                            grp, fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
-    # Zeichnung nur einmal hinzufügen
     elems.append(drawing)
 
     # Fußzeile
     elems.append(Spacer(1, 6*mm))
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
-    # Build
+    # PDF bauen
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
 
+
 if __name__ == "__main__":
-    make_report()
     make_report()
