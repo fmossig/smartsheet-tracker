@@ -1,7 +1,7 @@
-name: Smartsheet Status Snapshot (manuell)
+name: Smartsheet Status Snapshot & Report (manuell)
 
 on:
-  workflow_dispatch:  # nur manuell im Actions‑Tab
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,33 +13,34 @@ jobs:
       SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Set up Python 3.x
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
       - name: Install dependencies
         run: |
-          pip install smartsheet-python-sdk python-dotenv
+          pip install --upgrade pip
+          pip install smartsheet-python-sdk python-dotenv reportlab matplotlib
 
-      - name: Create 30‑Day status snapshot
+      - name: Create 30‑Day snapshot & summary
         run: python smartsheet_status_snapshot.py
 
-      - name: Commit status files
+      - name: Generate PDF report
+        run: python smartsheet_status_report.py
+
+      - name: Commit CSVs and PDF
         run: |
           DATE=$(date +'%Y-%m-%d')
-          FILE1="status/status_snapshot_${DATE}.csv"
-          FILE2="status/status_summary_${DATE}.csv"
+          SNAP="status/status_snapshot_${DATE}.csv"
+          SUMM="status/status_summary_${DATE}.csv"
+          PDF="status/status_report_${DATE}.pdf"
 
-          if [ -f "$FILE1" ] || [ -f "$FILE2" ]; then
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git add -f "$FILE1" "$FILE2"
-            git commit -m "Status Reports ${DATE}" || echo "No changes to commit"
-            git push
-          else
-            echo "⚠️ Keine Status-Dateien für ${DATE} gefunden – überspringe Commit."
-          fi
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -f "$SNAP" "$SUMM" "$PDF"
+          git commit -m "Status Reports & PDF ${DATE}" || echo "No changes to commit"
+          git push
