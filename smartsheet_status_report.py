@@ -1,7 +1,7 @@
 import csv, os
-from datetime import datetime
+from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -21,16 +21,21 @@ COLORS = {
 
 def read_snapshot(date_str):
     snap_file = f"status/status_snapshot_{date_str}.csv"
-    data = list(csv.reader(open(snap_file, encoding="utf-8")))[1:]
+    with open(snap_file, encoding="utf-8") as f:
+        data = list(csv.reader(f))[1:]
     counts = {g: 0 for g in COLORS}
     for grp, *_ in data:
         if grp in counts:
             counts[grp] += 1
     return [counts[g] for g in COLORS]
 
+
 def make_report():
     # Setup
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.utcnow().date()
+    date_str = today.isoformat()
+    cutoff = today - timedelta(days=30)
+    cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
     # Daten
@@ -47,24 +52,20 @@ def make_report():
         bottomMargin=20*mm
     )
     styles = getSampleStyleSheet()
-    # Sans‑Serif für besseren Look
-    styles.add(ParagraphStyle(name='Title2', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=18))
-    styles.add(ParagraphStyle(name='Heading', fontName='Helvetica-Bold', fontSize=14, spaceAfter=6))
+    styles.add(ParagraphStyle(name='CoverTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=20, spaceAfter=12))
+    styles.add(ParagraphStyle(name='CoverInfo', parent=styles['Normal'], fontName='Helvetica', fontSize=12, spaceAfter=6))
+    styles.add(ParagraphStyle(name='ChartTitle', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=14, spaceAfter=6))
 
     elems = []
 
-    # (Optional) Logo
-    # logo_path = "assets/logo.png"
-    # if os.path.exists(logo_path):
-    #     elems.append(Image(logo_path, width=40*mm, height=15*mm))
-    #     elems.append(Spacer(1, 5*mm))
+    # Deckblatt
+    elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
+    elems.append(Paragraph(f"Erstellungsdatum: {date_str}", styles['CoverInfo']))
+    elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff_str}", styles['CoverInfo']))
+    elems.append(PageBreak())
 
-    # Titel
-    elems.append(Paragraph("PRODUKTGRUPPEN ÜBERSICHT", styles['Title2']))
-    elems.append(Spacer(1, 8*mm))
-
-    # Untertitel / Chart‑Titel
-    elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['Heading']))
+    # Chart Überschrift
+    elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
 
     # Chart zeichnen
@@ -81,21 +82,21 @@ def make_report():
     max_val = max(values) if values else 1
     chart.valueAxis.valueMax = max_val * 1.1
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
-    # Gitterlinien
     chart.valueAxis.gridStrokeColor = colors.lightgrey
 
-    # Balkenfarben & keine Umrandung
-    for i, grp in enumerate(groups):
-        bar = chart.bars[i]
-        bar.fillColor = colors.HexColor(COLORS[grp])
-        bar.strokeColor = None
+    # Balkenfarben und keine Ränder
+    # Setze einzelne Farben pro Bar
+    chart.bars[0].barFillColors = [colors.HexColor(COLORS[g]) for g in groups]
+    chart.bars[0].strokeColor = None
 
-        # Daten‑Label
+    # Daten‑Labels über den Balken
+    for i, val in enumerate(values):
         label = String(
-            chart.x + (i+0.5)*(chart.width/len(values)),
-            chart.y + (values[i]/chart.valueAxis.valueMax)*chart.height + 4,
-            str(values[i]),
-            fontName='Helvetica', fontSize=9,
+            chart.x + (i + 0.5) * (chart.width / len(values)),
+            chart.y + (val / chart.valueAxis.valueMax) * chart.height + 4,
+            str(val),
+            fontName='Helvetica',
+            fontSize=9,
             textAnchor='middle'
         )
         drawing.add(label)
@@ -103,13 +104,10 @@ def make_report():
     drawing.add(chart)
     elems.append(drawing)
 
-    # Fußzeile Datum
-    elems.append(Spacer(1, 6*mm))
-    elems.append(Paragraph(f"Erstellt am: {date_str}", styles['Normal']))
-
     # PDF bauen
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
+
 
 if __name__ == "__main__":
     make_report()
