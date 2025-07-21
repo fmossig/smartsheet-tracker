@@ -90,12 +90,17 @@ def make_report():
     # Balkenbreite anpassen (narrower)
     chart.barWidth = chart.width / (len(values) * 2)
 
-    # Jeder Serie eigene Farbe
-    for idx, grp in enumerate(groups):
-        chart.bars[idx].fillColor = colors.HexColor(COLORS[grp])
-        chart.bars[idx].strokeColor = None
+    # Jeder Bar eigene Farbe und keine Umrandung
+# ReportLab erzeugt BarShapes unter chart.bars.items
+for idx, grp in enumerate(groups):
+    try:
+        bar_shape = chart.bars.items[idx]
+        bar_shape.fillColor = colors.HexColor(COLORS[grp])
+        bar_shape.strokeColor = None
+    except Exception:
+        pass
 
-    # Daten-Labels über den Balken
+# Daten-Labels über den Balken
     for idx, val in enumerate(values):
         label = String(
             chart.x + chart.barWidth/2 + idx * (chart.barWidth*2),
