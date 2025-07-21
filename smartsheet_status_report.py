@@ -38,11 +38,7 @@ def make_report():
     cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
-    # Daten
-    groups = list(COLORS.keys())
-    values = read_snapshot(date_str)
-
-    # Dokument
+    # Dokument erzeugen
     doc = SimpleDocTemplate(
         pdf_file,
         pagesize=A4,
@@ -64,7 +60,11 @@ def make_report():
     elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff_str}", styles['CoverInfo']))
     elems.append(PageBreak())
 
-    # Chart Überschrift
+    # Daten laden
+    groups = list(COLORS.keys())
+    values = read_snapshot(date_str)
+
+    # Chart Titel
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
 
@@ -84,17 +84,17 @@ def make_report():
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
     chart.valueAxis.gridStrokeColor = colors.lightgrey
 
-    # Balkenfarben und keine Ränder
-    # Setze einzelne Farben pro Bar
-    chart.bars[0].barFillColors = [colors.HexColor(COLORS[g]) for g in groups]
-    chart.bars[0].strokeColor = None
-
-    # Daten‑Labels über den Balken
-    for i, val in enumerate(values):
+    # Individuelle Balkenfarben und keine Umrandung
+    for idx, grp in enumerate(groups):
+        # Zugriff auf den Bar in der ersten Serie
+        bar = chart.bars[0][idx]
+        bar.fillColor = colors.HexColor(COLORS[grp])
+        bar.strokeColor = None
+        # Daten‑Label über dem Balken
         label = String(
-            chart.x + (i + 0.5) * (chart.width / len(values)),
-            chart.y + (val / chart.valueAxis.valueMax) * chart.height + 4,
-            str(val),
+            chart.x + (idx + 0.5) * (chart.width / len(values)),
+            chart.y + (values[idx] / chart.valueAxis.valueMax) * chart.height + 4,
+            str(values[idx]),
             fontName='Helvetica',
             fontSize=9,
             textAnchor='middle'
@@ -104,10 +104,13 @@ def make_report():
     drawing.add(chart)
     elems.append(drawing)
 
+    # Fußzeile Datum
+    elems.append(Spacer(1, 6*mm))
+    elems.append(Paragraph(f"Erstellt am: {date_str}", styles['Normal']))
+
     # PDF bauen
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
-
 
 if __name__ == "__main__":
     make_report()
