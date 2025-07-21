@@ -57,7 +57,7 @@ def make_report():
 
     # Deckblatt
     elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
-    elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['CoverInfo']))
+    elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d)}", styles['CoverInfo']))
     elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff_str}", styles['CoverInfo']))
     elems.append(PageBreak())
 
