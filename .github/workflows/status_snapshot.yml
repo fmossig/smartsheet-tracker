@@ -9,9 +9,12 @@ permissions:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+    env:
+      SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -19,23 +22,24 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install smartsheet-python-sdk python-dotenv
+        run: |
+          pip install smartsheet-python-sdk python-dotenv
 
       - name: Create 30‑Day status snapshot
-        env:
-          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: python smartsheet_status_snapshot.py
 
-      - name: Commit status snapshot
+      - name: Commit status files
         run: |
           DATE=$(date +'%Y-%m-%d')
-          FILE="status_snapshot_${DATE}.csv"
-          if [ -f "$FILE" ]; then
+          FILE1="status/status_snapshot_${DATE}.csv"
+          FILE2="status/status_summary_${DATE}.csv"
+
+          if [ -f "$FILE1" ] || [ -f "$FILE2" ]; then
             git config user.name "github-actions"
             git config user.email "actions@github.com"
-            git add -f "$FILE"
-            git commit -m "Status‑Snapshot ${DATE}" || echo "No changes to commit"
+            git add -f "$FILE1" "$FILE2"
+            git commit -m "Status Reports ${DATE}" || echo "No changes to commit"
             git push
           else
-            echo "⚠️ Datei $FILE nicht gefunden – überspringe Commit."
+            echo "⚠️ Keine Status-Dateien für ${DATE} gefunden – überspringe Commit."
           fi
