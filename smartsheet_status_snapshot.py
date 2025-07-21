@@ -3,7 +3,6 @@ import csv
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from collections import defaultdict
 
 # → Token laden
 load_dotenv()
@@ -30,16 +29,18 @@ phase_fields = [
     ("Reopen C2 am",   "Reopen C2 von",5),
 ]
 
-# → heute und die Zeitfenster
+# → heute und Cutoffs
 today  = datetime.utcnow().date()
-cut30  = today - timedelta(days=30)
-cut60  = today - timedelta(days=60)
-cut90  = today - timedelta(days=90)
+cutoff30  = today - timedelta(days=30)
 
-# → Output‑Dateien
-date_str       = today.isoformat()
-snapshot_file  = f"status_snapshot_{date_str}.csv"
-summary_file   = f"status_summary_{date_str}.csv"
+# → Output‑Ordner anlegen
+status_dir = "status"
+os.makedirs(status_dir, exist_ok=True)
+
+# → Dateinamen in diesem Ordner
+date_str      = today.isoformat()
+snapshot_file = os.path.join(status_dir, f"status_snapshot_{date_str}.csv")
+summary_file  = os.path.join(status_dir, f"status_summary_{date_str}.csv")
 
 # --- 1) Detaillierter 30‑Tage‑Snapshot ---
 with open(snapshot_file, "w", newline="", encoding="utf-8") as f:
@@ -50,84 +51,71 @@ with open(snapshot_file, "w", newline="", encoding="utf-8") as f:
         col_map = {col.title: col.id for col in sheet.columns}
         for row in sheet.rows:
             for date_col, user_col, phase_no in phase_fields:
-                val = None; user = ""
-                for cell in row.cells:
-                    if cell.column_id == col_map.get(date_col):
-                        val = cell.value
-                    if cell.column_id == col_map.get(user_col):
-                        user = cell.display_value or ""
-                if not val: 
+                val = next((cell.value for cell in row.cells if cell.column_id == col_map.get(date_col)), None)
+                user = next((cell.display_value for cell in row.cells if cell.column_id == col_map.get(user_col)), "")
+                if not val:
                     continue
                 try:
                     dt = datetime.fromisoformat(val).date()
                 except ValueError:
                     continue
-                if dt >= cut30:
+                if dt >= cutoff30:
                     writer.writerow([group, row.id, phase_no, date_col, dt.isoformat(), user])
 
-print(f"✅ 30‑Tage‑Snapshot geschrieben: {snapshot_file}")
+print(f"✅ 30‑Tage Snapshot geschrieben: {snapshot_file}")
 
 # --- 2) Perioden‑Vergleich über alle Phasen-Events ---
-# Wir sammeln alle Events (unabhängig von 30‑Tage‑Filter)
+# Wir sammeln alle Events (unabhängig vom 30‑Tage‑Filter) und jeder Row das jüngste Datum
+cutoff60 = today - timedelta(days=60)
+cutoff90 = today - timedelta(days=90)
+
 events = []
-latest = {}  # für jede RowID das jüngste Datum
+latest = {}  # (Gruppe,RowID) → jüngstes Datum
 
 for group, sid in sheet_ids.items():
     sheet = client.Sheets.get_sheet(sid)
     col_map = {col.title: col.id for col in sheet.columns}
     for row in sheet.rows:
-        row_key = (group, row.id)
+        key = (group, row.id)
         for date_col, user_col, phase_no in phase_fields:
-            val = None
-            for cell in row.cells:
-                if cell.column_id == col_map.get(date_col):
-                    val = cell.value
-            if not val: 
+            val = next((cell.value for cell in row.cells if cell.column_id == col_map.get(date_col)), None)
+            if not val:
                 continue
             try:
                 dt = datetime.fromisoformat(val).date()
             except ValueError:
                 continue
             events.append(dt)
-            # für spätere Auswertung der jüngsten Phase pro Row
-            prev = latest.get(row_key)
+            prev = latest.get(key)
             if prev is None or dt > prev:
-                latest[row_key] = dt
+                latest[key] = dt
 
-# Zähle Events je Zeitraum
+# Zähle Phase‑Events je Zeitraum
 cnt_evt = {"0-30":0, "31-60":0, "61-90":0}
 for dt in events:
-    if   dt >= cut30:  cnt_evt["0-30"] += 1
-    elif dt >= cut60:  cnt_evt["31-60"] += 1
-    elif dt >= cut90:  cnt_evt["61-90"] += 1
+    if   dt >= cutoff30:  cnt_evt["0-30"]  += 1
+    elif dt >= cutoff60:  cnt_evt["31-60"] += 1
+    elif dt >= cutoff90:  cnt_evt["61-90"] += 1
 
-# Zähle Rows mit jüngster Phase je Zeitraum
+# Zähle Rows nach jüngster Phase
 cnt_row = {"0-30":0, "31-60":0, "61-90":0, ">90":0}
 for dt in latest.values():
-    if   dt >= cut30:  cnt_row["0-30"] += 1
-    elif dt >= cut60:  cnt_row["31-60"] += 1
-    elif dt >= cut90:  cnt_row["61-90"] += 1
-    else:              cnt_row[">90"]   += 1
+    if   dt >= cutoff30:  cnt_row["0-30"]  += 1
+    elif dt >= cutoff60:  cnt_row["31-60"] += 1
+    elif dt >= cutoff90:  cnt_row["61-90"] += 1
+    else:                  cnt_row[">90"]   += 1
 
-# Schreibe Summary‑CSV
+# Summary‑CSV schreiben
 with open(summary_file, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["Metrik","0-30 Tage","31-60 Tage","61-90 Tage",">90 Tage"])
-    # Events
     writer.writerow([
         "Anzahl Phase‑Events",
-        cnt_evt["0-30"],
-        cnt_evt["31-60"],
-        cnt_evt["61-90"],
-        ""  # keine Events >90 in dieser Metrik
+        cnt_evt["0-30"], cnt_evt["31-60"], cnt_evt["61-90"], ""
     ])
-    # Rows
     writer.writerow([
         "Distinct Rows mit jüngster Phase",
-        cnt_row["0-30"],
-        cnt_row["31-60"],
-        cnt_row["61-90"],
-        cnt_row[">90"]
+        cnt_row["0-30"], cnt_row["31-60"], cnt_row["61-90"], cnt_row[">90"]
     ])
 
 print(f"✅ Perioden‑Vergleich geschrieben: {summary_file}")
