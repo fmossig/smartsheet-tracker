@@ -26,17 +26,16 @@ def read_snapshot(date_str):
     counts = {g: 0 for g in COLORS}
     with open(snap_file, encoding="utf-8") as f:
         reader = csv.reader(f)
-        next(reader)  # Header überspringen
+        next(reader)
         for row in reader:
             grp = row[0]
             if grp in counts:
                 counts[grp] += 1
     return [counts[g] for g in COLORS]
 
-
 def make_report():
     """
-    Erstellt einen mehrseitigen PDF-Report mit Deckblatt und Bar-Chart.
+    Erstellt einen PDF-Report mit Deckblatt und einem Bar-Chart.
     """
     # Datum
     now = datetime.now(timezone.utc)
@@ -74,32 +73,35 @@ def make_report():
 
     # Chart-Titel
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
-    elems.append(Spacer(1, 4*mm))
+    elems.append(Spacer(1, 6*mm))
 
     # Bar-Chart manuell zeichnen
-    usable_width = (210 - 2*20) * mm  # A4 Breite minus Ränder
+    usable_width = A4[0] - 2*20*mm  # nutzbare Breite
     chart_height = 80*mm
     origin_x = 0
     origin_y = 15*mm
 
-    max_val = max(values) if values else 1
-    num = len(groups)
-    spacing = usable_width / (num * 1.5)
-    bar_width = usable_width / (num * 1.2)
+    # Berechne Balkenbreite und Abstände
+    total_gap = usable_width * 0.1
+    gap = total_gap / (len(groups) + 1)
+    bar_width = (usable_width - total_gap) / len(groups)
 
-    drawing = Drawing(usable_width, chart_height + origin_y)
+    drawing = Drawing(usable_width, chart_height + origin_y + 2*mm)
     for idx, grp in enumerate(groups):
         val = values[idx]
-        x = origin_x + spacing/2 + idx * (bar_width + spacing)
-        height = (val / max_val) * chart_height
+        x = origin_x + gap * (idx+1) + bar_width * idx
+        height = (val / max(values or [1])) * chart_height
+
         # Balken zeichnen
         bar = Rect(x, origin_y, bar_width, height,
                    fillColor=colors.HexColor(COLORS[grp]), strokeColor=None)
         drawing.add(bar)
-        # Wert-Label über Balken
+
+        # Wert-Label oben
         drawing.add(String(x + bar_width/2, origin_y + height + 4,
                            str(val), fontName='Helvetica', fontSize=9, textAnchor='middle'))
-        # Gruppen-Label unter Balken
+
+        # Gruppen-Label unten
         drawing.add(String(x + bar_width/2, origin_y - 10,
                            grp, fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
@@ -112,7 +114,6 @@ def make_report():
     # PDF bauen
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
-
 
 if __name__ == "__main__":
     make_report()
