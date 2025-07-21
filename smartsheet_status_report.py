@@ -8,8 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 
-# Farb‑Mapping
-COLORS = {
+# Farb‑Mapping\ nCOLORS = {
     "NA": "#E63946",
     "NF": "#457B9D",
     "NH": "#2A9D8F",
@@ -39,7 +38,7 @@ def make_report():
     cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
-    # PDF-Dokument
+    # PDF-Dokument anlegen
     doc = SimpleDocTemplate(
         pdf_file,
         pagesize=A4,
@@ -92,11 +91,11 @@ def make_report():
     chart.groupSpacing = chart.barWidth / 2
 
     # Farben pro Balken und keine Umrandung
-for idx, bar in enumerate(chart.bars):
-    bar.fillColor = colors.HexColor(COLORS[groups[idx]])
-    bar.strokeColor = None
+    for idx, bar in enumerate(chart.bars):
+        bar.fillColor = colors.HexColor(COLORS[groups[idx]])
+        bar.strokeColor = None
 
-# Labels über den Balken
+    # Labels über den Balken
     for idx, val in enumerate(values):
         x = chart.x + chart.groupSpacing + idx * (chart.barWidth + chart.groupSpacing) + chart.barWidth/2
         y = chart.y + (val / chart.valueAxis.valueMax) * chart.height + 6
@@ -113,6 +112,7 @@ for idx, bar in enumerate(chart.bars):
     # PDF bauen
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
+
 
 if __name__ == "__main__":
     make_report()
