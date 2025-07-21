@@ -1,5 +1,5 @@
 import csv, os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.graphics.shapes import Drawing, String
@@ -31,14 +31,15 @@ def read_snapshot(date_str):
 
 
 def make_report():
-    # Setup
-    today = datetime.utcnow().date()
+    # Setup mit UTC
+    now = datetime.now(timezone.utc)
+    today = now.date()
     date_str = today.isoformat()
     cutoff = today - timedelta(days=30)
     cutoff_str = cutoff.isoformat()
     pdf_file = f"status/status_report_{date_str}.pdf"
 
-    # Dokument erzeugen
+    # PDF-Dokument
     doc = SimpleDocTemplate(
         pdf_file,
         pagesize=A4,
@@ -56,7 +57,7 @@ def make_report():
 
     # Deckblatt
     elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
-    elems.append(Paragraph(f"Erstellungsdatum: {date_str}", styles['CoverInfo']))
+    elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['CoverInfo']))
     elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff_str}", styles['CoverInfo']))
     elems.append(PageBreak())
 
@@ -84,29 +85,27 @@ def make_report():
     chart.valueAxis.valueStep = max(1, int(max_val/10) or 1)
     chart.valueAxis.gridStrokeColor = colors.lightgrey
 
-    # Individuelle Balkenfarben und keine Umrandung
+    # Balkenfarben und keine Umrandung und Labels
     for idx, grp in enumerate(groups):
-        # Zugriff auf den Bar in der ersten Serie
+        # direkt die Serie-0 Bar
         bar = chart.bars[0][idx]
         bar.fillColor = colors.HexColor(COLORS[grp])
         bar.strokeColor = None
-        # Daten‑Label über dem Balken
+        # Wert über dem Balken
         label = String(
             chart.x + (idx + 0.5) * (chart.width / len(values)),
-            chart.y + (values[idx] / chart.valueAxis.valueMax) * chart.height + 4,
+            chart.y + (values[idx] / chart.valueAxis.valueMax) * chart.height + 6,
             str(values[idx]),
-            fontName='Helvetica',
-            fontSize=9,
-            textAnchor='middle'
+            fontName='Helvetica', fontSize=9, textAnchor='middle'
         )
         drawing.add(label)
 
     drawing.add(chart)
     elems.append(drawing)
 
-    # Fußzeile Datum
+    # Fußzeile
     elems.append(Spacer(1, 6*mm))
-    elems.append(Paragraph(f"Erstellt am: {date_str}", styles['Normal']))
+    elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
     # PDF bauen
     doc.build(elems)
