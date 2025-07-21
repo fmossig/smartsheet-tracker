@@ -77,25 +77,26 @@ def make_report():
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
 
-        # Bar-Chart manuell zeichnen
-    drawing = Drawing(180*mm, 100*mm)
-    chart_width = 150*mm
+            # Bar-Chart manuell zeichnen
+    # Zeichnungsfläche anpassen auf nutzbare Breite (A4 Breite 210mm minus 2*20mm Rand)
+    usable_width = (210 - 2*20) * mm
+    chart_width = usable_width
     chart_height = 80*mm
-    origin_x = 15*mm
+    origin_x = 0
     origin_y = 15*mm
 
     max_val = max(values) if values else 1
-    # Abstände und Balkenbreite
     num = len(groups)
     spacing = chart_width / (num * 1.5)
     bar_width = chart_width / (num * 1.2)
 
+    drawing = Drawing(usable_width, chart_height + origin_y)
+    from reportlab.graphics.shapes import Rect
     for idx, grp in enumerate(groups):
         val = values[idx]
         x = origin_x + spacing/2 + idx * (bar_width + spacing)
         height = (val / max_val) * chart_height
         # Balken zeichnen
-        from reportlab.graphics.shapes import Rect
         bar = Rect(x, origin_y, bar_width, height,
                    fillColor=colors.HexColor(COLORS[grp]), strokeColor=None)
         drawing.add(bar)
@@ -106,7 +107,7 @@ def make_report():
         drawing.add(String(x + bar_width/2, origin_y - 10,
                            grp, fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
-    elems.append(drawing)
+    # Zeichnung nur einmal hinzufügen
     elems.append(drawing)
 
     # Fußzeile
@@ -117,6 +118,6 @@ def make_report():
     doc.build(elems)
     print(f"✅ PDF Report erstellt: {pdf_file}")
 
-
 if __name__ == "__main__":
+    make_report()
     make_report()
