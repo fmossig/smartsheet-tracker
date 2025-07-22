@@ -251,6 +251,7 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
     return d, total_h
 
 
+
 # ---------- Report ----------
 def make_report():
     load_dotenv()
@@ -413,30 +414,18 @@ def make_report():
         elems.append(Spacer(1, 4*mm))
 
 
-        # Emp-Legende
-        leg2 = Drawing(banner_w2, legend_h2)
-        y_center = legend_h2 / 2
-        text_y   = y_center - (font_sz2 * 0.35)
-        item_w   = box_size + 2*mm + gap_item2
-        total_w  = len(legend_items)*item_w - gap_item2
-        x_cursor = (banner_w2 - total_w) / 2.0
+        # --- Mitarbeiter-Legende im grauen Banner (volle Breite) ---
+        leg2_draw, _ = build_emp_legend_banner(
+            width=banner_w,              # = usable_width
+            emp_items=legend_items,      # ["DM","EK",...]
+            box_size=5*mm,
+            font_sz=10,
+            gap_item=14*mm,
+            banner_color="#F2F2F2"
+        )
+        elems.append(leg2_draw)
+        elems.append(Spacer(1, 1*mm))  # Abstand zum Chart minimal halten
 
-        for emp in legend_items:
-            leg2.add(Rect(x_cursor,
-                          y_center - box_size/2,
-                          box_size, box_size,
-                          fillColor=colors.HexColor(EMP_COLORS[emp]),
-                          strokeColor=None))
-            leg2.add(String(x_cursor + box_size + 2*mm,
-                            text_y,
-                            emp,
-                            fontName='Helvetica',
-                            fontSize=font_sz2,
-                            textAnchor='start'))
-            x_cursor += item_w
-
-        elems.append(leg2)
-        elems.append(Spacer(1, 2*mm))
 
         # Gestapeltes Chart
         counts = read_phase_employee_by_group(date_str, grp)
