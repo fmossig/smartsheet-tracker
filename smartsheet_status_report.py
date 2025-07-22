@@ -255,7 +255,7 @@ def build_country_rank_tables(
     ):
     """
     Erzeugt zwei Ranglisten (Top 5) nebeneinander:
-      links:  'Am längsten ausstehende Überprüfung' (dunkelrot)
+      links:  'Inaktivste Länder' (dunkelrot)
       rechts: 'Aktivste Länder' (grün)
 
     • Banner getrennt (nicht verbunden)
@@ -293,7 +293,7 @@ def build_country_rank_tables(
 
     col_w = (width_total - gap) / 2.0
 
-    left_banner,  _ = make_banner("Am längsten ausstehende Überprüfung", "#8B0000", col_w)
+    left_banner,  _ = make_banner("Inaktivste Länder", "#8B0000", col_w)
     right_banner, _ = make_banner("Aktivste Länder",                      "#2E8B57", col_w)
 
     # ---- Tabellen bauen (ohne Rahmen) ----
