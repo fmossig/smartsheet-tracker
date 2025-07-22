@@ -187,7 +187,6 @@ def make_report():
     gap_y     = 4*mm * shrink
     origin_y2 = 10*mm
 
-    # Höhe berechnen
     rows_drawn = sum(1 for p in phases_sorted if sum(counts[p][e] for e in emp_sorted) > 0)
     total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
     max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm
@@ -200,7 +199,13 @@ def make_report():
 
     d2 = Drawing(chart_w, total_h)
 
-    # Zeichnen
+    # NEU: globale Skala
+    global_max = 0
+    for p in phases_sorted:
+        for emp in emp_sorted:
+            global_max = max(global_max, counts[p][emp])
+    px_per_unit = (chart_w - left_ax - 5*mm) / (global_max if global_max else 1)
+
     y_index = 0
     for phase in phases_sorted:
         phase_total = sum(counts[phase][e] for e in emp_sorted)
@@ -214,13 +219,12 @@ def make_report():
         d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
                       fontName='Helvetica', fontSize=8, textAnchor='start'))
 
-        run_w   = 0
-        avail_w = chart_w - left_ax - 5*mm
+        run_w = 0
         for emp in emp_sorted:
             v = counts[phase][emp]
             if v == 0:
                 continue
-            seg_w = max((v / phase_total) * avail_w, 2)  # Mindestbreite
+            seg_w = v * px_per_unit   # <<<< HIER
             rect = Rect(x + run_w, y, seg_w, row_h,
                         fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
             d2.add(rect)
