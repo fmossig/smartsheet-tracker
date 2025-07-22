@@ -16,6 +16,8 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # Pie
 from reportlab.graphics.charts.piecharts import Pie
@@ -73,37 +75,30 @@ SHEET_IDS = {
 
 # ---------- Helpers ----------
 def draw_footer(canvas, doc):
-    """Zwei Logos links unten platzieren."""
-    # Pfade
-    amz_path = "assets/amazon_logo.png"
-    noc_path = "assets/noctua_logo.png"
+    amz_path = os.path.join(ASSETS_DIR, "amazon_logo.png")
+    noc_path = os.path.join(ASSETS_DIR, "noctua_logo.png")
 
-    # gewünschte Höhe (automatisch skaliert in der Breite)
-    logo_h = 8*mm
-    padding = 2*mm
-    gap = 4*mm   # Abstand zwischen den Logos
+    logo_h   = 8*mm
+    gap      = 4*mm
+    padding  = 2*mm
 
-    # Bild laden (liefert Breite/Höhe in px)
-    amz = ImageReader(amz_path)
-    noc = ImageReader(noc_path)
-
-    amz_w, amz_h = amz.getSize()
-    noc_w, noc_h = noc.getSize()
-
-    # Seitenverhältnis erhalten
-    amz_scale = logo_h / amz_h
-    noc_scale = logo_h / noc_h
-
-    amz_w_pt = amz_w * amz_scale
-    noc_w_pt = noc_w * noc_scale
-
-    # Position: links unten, innerhalb der Seitenränder
     x0 = doc.leftMargin
-    y0 = doc.bottomMargin - logo_h - padding  # direkt unterhalb des Textbereichs
+    y0 = doc.bottomMargin - logo_h - padding
 
-    # Amazon zuerst, dann Noctua rechts daneben
-    canvas.drawImage(amz, x0, y0, width=amz_w_pt, height=logo_h, mask='auto')
-    canvas.drawImage(noc, x0 + amz_w_pt + gap, y0, width=noc_w_pt, height=logo_h, mask='auto')
+    def draw_if_exists(path, x, y, h):
+        if not os.path.isfile(path):
+            # einfach überspringen, damit der Build nicht crasht
+            return 0
+        img = ImageReader(path)
+        w, h_img = img.getSize()
+        scale = h / h_img
+        w_pt  = w * scale
+        canvas.drawImage(img, x, y, width=w_pt, height=h, mask='auto')
+        return w_pt
+
+    w_amz = draw_if_exists(amz_path, x0, y0, logo_h)
+    draw_if_exists(noc_path, x0 + w_amz + gap, y0, logo_h)
+
 
 def read_snapshot_counts(date_str):
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
