@@ -179,7 +179,6 @@ def make_report():
         x_cursor += item_width
     
     elems.append(leg)
-    elems.append(Spacer(1, 2*mm))
 
     # 3) Gestapeltes Chart – globale Breite, nicht auf 100% pro Phase
     shrink    = 0.75                 # 25% kleiner in der Höhe
