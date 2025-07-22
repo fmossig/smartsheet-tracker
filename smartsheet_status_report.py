@@ -148,12 +148,12 @@ def make_report():
     elems.append(Spacer(1, 6*mm))
 
     # 5) Zeichnungsfläche definieren
-    usable_width2 = A4[0] - 2*20*mm
-    row_h = 10*mm
-    gap_y = 8*mm
-    left_axis_space = 22*mm
+    usable_width2 = A4[0] - 2*15*mm
+    row_h = 8*mm
+    gap_y = 5*mm
+    left_axis_space = 18*mm
     origin_x2 = 0
-    origin_y2 = 15*mm
+    origin_y2 = 10*mm
     total_h = len(phases_sorted) * (row_h + gap_y) + origin_y2 + 10*mm
 
     d2 = Drawing(usable_width2, total_h)
