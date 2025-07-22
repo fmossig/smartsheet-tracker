@@ -1,4 +1,4 @@
-import csv, os
+Iimport csv, os
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -145,20 +145,26 @@ def make_report():
     elems.append(banner)
     elems.append(Spacer(1, 4*mm))
 
-    # 2) Horizontale Legende
+    # 2) Horizontale Legende (zentriert)
     legend_h  = 10*mm
     box_size  = 5*mm
     font_sz   = 10
     gap_item  = 14*mm
-
     legend_w  = banner_w
+    
     leg = Drawing(legend_w, legend_h)
-
     y_center = legend_h / 2
-    text_y   = y_center - (font_sz * 0.35)  # optische Mitte
+    text_y   = y_center - (font_sz * 0.35)
 
-    x_cursor = 0
-    for emp in emp_sorted:
+    # Breite aller Items berechnen
+    items = emp_sorted
+    item_width = box_size + 2*mm + gap_item   # grob pro Item
+    total_items_w = len(items)*item_width - gap_item  # letzter hat kein gap mehr
+    
+    # Start so wählen, dass Gesamtbreite mittig ist
+    x_cursor = (legend_w - total_items_w) / 2.0
+    
+    for emp in items:
         leg.add(Rect(x_cursor,
                      y_center - box_size/2,
                      box_size, box_size,
@@ -170,8 +176,8 @@ def make_report():
                        fontName='Helvetica',
                        fontSize=font_sz,
                        textAnchor='start'))
-        x_cursor += box_size + 2*mm + gap_item
-
+        x_cursor += item_width
+    
     elems.append(leg)
     elems.append(Spacer(1, 6*mm))
 
