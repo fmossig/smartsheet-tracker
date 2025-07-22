@@ -254,28 +254,30 @@ def build_country_rank_tables(stats,
                               banner_height=9*mm):
     """
     Zwei Ranglisten (Top 5) nebeneinander:
-      links:  'Inaktivste Länder' (dunkelrot)
-      rechts: 'Aktivste Länder' (grün)
+      links:  'Inaktivste Länder'  (dunkelrot)
+      rechts: 'Aktivste Länder'    (grün)
 
-    • Banner schmaler (banner_shrink) und zentriert in der Spalte
-    • Abstand zwischen den beiden Bannern/Tabellen über gap_between_tables
-    • Tabellen ohne Rahmen
+    - Banner schmaler (banner_shrink) und jeweils in seiner Spalte zentriert
+    - Abstand zwischen den beiden Blöcken über gap_between_tables
+    - Gesamter Block kann mit shift_right nach rechts verschoben werden
+    - Tabellen ohne Rahmen/Gitter
+    - Top 1/2/3 größer/fett gemäß Vorgabe
     """
 
-    # ---- Daten vorbereiten ---------------------------------------------------
+    # ---------- Daten vorbereiten ----------
     longest = sorted(stats, key=lambda x: x["avg"], reverse=True)[:5]
     active  = sorted(stats, key=lambda x: x["avg"])[:5]
 
-    def rows(lst):
+    def to_rows(lst):
         out = []
         for i, item in enumerate(lst, start=1):
             out.append([i, item["land"], f"~{int(round(item['avg']))}d"])
         return out
 
-    left_rows  = rows(longest)
-    right_rows = rows(active)
+    left_rows  = to_rows(longest)
+    right_rows = to_rows(active)
 
-    # ---- Banner Helper -------------------------------------------------------
+    # ---------- Banner Helper ----------
     def make_banner(txt, hexcolor, w, h=banner_height):
         d = Drawing(w, h)
         d.add(Rect(0, 0, w, h, fillColor=colors.HexColor(hexcolor), strokeColor=None))
@@ -284,17 +286,15 @@ def build_country_rank_tables(stats,
                      textAnchor="middle", fillColor=colors.white))
         return d
 
-    # ---- Basisbreiten --------------------------------------------------------
-    # Wir bauen Outer-Table mit 3 Spalten: links | GAP | rechts
-    col_w = (width_total - gap_between_tables) / 2.0
-    bn_w  = col_w * banner_shrink  # Banner schmaler
+    # ---------- Breiten ----------
+    col_w = (width_total - gap_between_tables) / 2.0     # jede Spalte
+    bn_w  = col_w * banner_shrink                        # Banner schmaler
 
-    # ---- Banner bauen + zentrieren ------------------------------------------
+    # ---------- Banner erzeugen + zentrieren ----------
     left_banner  = make_banner("Inaktivste Länder", "#8B0000", bn_w)
-    right_banner = make_banner("Aktivste Länder", "#2E8B57", bn_w)
+    right_banner = make_banner("Aktivste Länder",   "#2E8B57", bn_w)
 
     def center_drawing_in_col(drawing, col_width):
-        # Wrap Drawing in 1x1 Table to center
         t = Table([[drawing]], colWidths=[col_width], hAlign="CENTER")
         t.setStyle(TableStyle([
             ("VALIGN", (0,0), (-1,-1), "TOP"),
@@ -310,14 +310,18 @@ def build_country_rank_tables(stats,
     left_banner_tbl  = center_drawing_in_col(left_banner,  col_w)
     right_banner_tbl = center_drawing_in_col(right_banner, col_w)
 
-    # ---- Tabellen (ohne Linien) ---------------------------------------------
+    # ---------- Tabellen (ohne Linien) ----------
     header    = ["#", "Land", "Ø Alter"]
     base_fs   = 8
     second_fs = base_fs + 1
     first_fs  = base_fs + 2
 
-    left_tbl  = Table([header] + left_rows,  colWidths=[8*mm, 28*mm, 22*mm], hAlign="CENTER")
-    right_tbl = Table([header] + right_rows, colWidths=[8*mm, 28*mm, 22*mm], hAlign="CENTER")
+    left_tbl  = Table([header] + left_rows,
+                      colWidths=[8*mm, 28*mm, 22*mm],
+                      hAlign="CENTER")
+    right_tbl = Table([header] + right_rows,
+                      colWidths=[8*mm, 28*mm, 22*mm],
+                      hAlign="CENTER")
 
     base_style = [
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
@@ -337,8 +341,9 @@ def build_country_rank_tables(stats,
     left_tbl.setStyle(TableStyle(base_style))
     right_tbl.setStyle(TableStyle(base_style))
 
-    # Top 1/2/3 hervorheben
+    # Ranking-Styles
     def style_ranks(tbl):
+        # Zeile 1 (Header) = 0; Daten ab 1
         if len(tbl._cellvalues) > 1:
             tbl.setStyle(TableStyle([
                 ("FONTNAME", (0,1), (-1,1), "Helvetica-Bold"),
@@ -354,15 +359,17 @@ def build_country_rank_tables(stats,
                 ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
                 ("FONTSIZE", (0,3), (-1,3), base_fs),
             ]))
+        # Plätze 4 & 5 bleiben base_fs / normal-bold (oder du passt hier an)
+
     style_ranks(left_tbl)
     style_ranks(right_tbl)
 
-    # Blöcke (Banner + kleiner Spacer + Tabelle)
+    # Block pro Seite: Banner + Spacer + Tabelle
     block_spacer = Spacer(1, 2*mm)
     left_block  = [left_banner_tbl,  block_spacer, left_tbl]
     right_block = [right_banner_tbl, block_spacer, right_tbl]
 
-    # Outer Table mit Gap-Spalte
+    # Outer mit Gap-Spalte
     outer = Table([[left_block, "", right_block]],
                   colWidths=[col_w, gap_between_tables, col_w],
                   hAlign="CENTER",
@@ -376,64 +383,20 @@ def build_country_rank_tables(stats,
                       ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
                   ]))
 
-    return [outer]
+    # Wrapper, um alles nach rechts zu schieben
+    wrapper = Table([[outer]],
+                    colWidths=[width_total],
+                    style=TableStyle([
+                        ("LEFTPADDING", (0,0), (-1,-1), shift_right),
+                        ("RIGHTPADDING",(0,0), (-1,-1), 0),
+                        ("TOPPADDING",  (0,0), (-1,-1), 0),
+                        ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+                        ("BOX", (0,0), (-1,-1), 0, colors.white),
+                        ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
+                    ]))
 
+    return [wrapper]
 
-# ---- Optional: header builder (already there) ----
-def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
-    chip_font   = 'Helvetica-Bold'
-    chip_fs     = 18
-    chip_pad_x  = 4*mm
-    chip_pad_y  = 2*mm
-
-    line1_font  = 'Helvetica-Bold'
-    line1_fs    = 14
-    line2_font  = 'Helvetica'
-    line2_fs    = 9
-
-    gap_between = 6*mm
-
-    CHIP_TEXT_UP = 1*mm
-    TEXT_LEFT    = 2*mm
-
-    chip_text_w = stringWidth(grp_code, chip_font, chip_fs)
-    chip_w = chip_text_w + 2*chip_pad_x
-    chip_h = chip_fs*1.2 + 2*chip_pad_y
-
-    line1_w = stringWidth("Daten & Kennzahlen", line1_font, line1_fs)
-    line2_w = stringWidth(period_text,          line2_font, line2_fs)
-    text_block_w = max(line1_w, line2_w)
-
-    total_w = chip_w + gap_between + text_block_w
-    total_h = chip_h
-
-    d = Drawing(total_w, total_h)
-
-    d.add(Rect(0, 0, chip_w, chip_h,
-               fillColor=colors.HexColor(grp_color_hex),
-               strokeColor=None))
-    d.add(String(chip_pad_x,
-                 chip_pad_y + chip_fs*0.1 + CHIP_TEXT_UP,
-                 grp_code,
-                 fontName=chip_font, fontSize=chip_fs,
-                 fillColor=colors.white, textAnchor='start'))
-
-    text_x = chip_w + gap_between - TEXT_LEFT
-    center_y = total_h/2.0
-
-    line1_y = center_y + line1_fs*0.35
-    line2_y = center_y - line2_fs*1.1
-
-    d.add(String(text_x, line1_y,
-                 "Daten & Kennzahlen",
-                 fontName=line1_font, fontSize=line1_fs,
-                 fillColor=colors.black, textAnchor='start'))
-    d.add(String(text_x, line2_y,
-                 period_text,
-                 fontName=line2_font, fontSize=line2_fs,
-                 fillColor=colors.black, textAnchor='start'))
-
-    return d, total_h
 
 # ---------- Report ----------
 def make_report():
