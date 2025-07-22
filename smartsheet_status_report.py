@@ -318,9 +318,9 @@ def make_report():
     elems.append(Spacer(1, 3*mm))
 
     # Layout-Parameter
-    light_blue = colors.HexColor("#D8F0FF")
-    box_h      = 18*mm
-    spacing    = 6*mm          # Abstand zwischen Boxen
+    light_blue = colors.HexColor("#E63946")
+    box_h      = 20*mm
+    spacing    = 10*mm          # Abstand zwischen Boxen
     font_val   = 12
     font_lab   = 8
 
@@ -355,13 +355,13 @@ def make_report():
         kpi_draw.add(String(x + box_w/2, box_h * 0.62,
                             str(value),
                             fontName='Helvetica-Bold', fontSize=font_val,
-                            textAnchor='middle', fillColor=colors.black))
+                            textAnchor='middle', fillColor=colors.white))
         # Label (automatisch umbrochen? ReportLab-String bricht nicht,
         # deshalb kleiner Font und mehr Breite)
         kpi_draw.add(String(x + box_w/2, box_h * 0.28,
                             label,
-                            fontName='Helvetica', fontSize=font_lab,
-                            textAnchor='middle', fillColor=colors.black))
+                            fontName='Helvetica-Bold', fontSize=font_lab,
+                            textAnchor='middle', fillColor=colors.white))
 
     elems.append(kpi_draw)
     elems.append(Spacer(1, 6*mm))
