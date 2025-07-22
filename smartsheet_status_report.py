@@ -316,9 +316,9 @@ def make_report():
     artikel, mp, bearbeitet, pct = calc_na_metrics(cutoff)
 
     elems.append(Spacer(1, 3*mm))
-    box_w = (chart_w - 3*6*mm) / 4   # 4 Boxen, 3 Abstände à 6mm
+    box_w = (chart_w - 3*25*mm) / 4   # 4 Boxen, 3 Abstände à 6mm
     box_h = 18*mm
-    spacing = 15*mm
+    spacing = 25*mm
     red = colors.HexColor("#E63946")
 
     kpi_labels = [
@@ -336,11 +336,11 @@ def make_report():
         kpi_draw.add(String(x + box_w/2, box_h*0.62,
                             str(value),
                             fontName='Helvetica-Bold', fontSize=12,
-                            textAnchor='middle', fillColor=colors.black))
+                            textAnchor='middle', fillColor=colors.white))
         kpi_draw.add(String(x + box_w/2, box_h*0.28,
                             label,
                             fontName='Helvetica', fontSize=8,
-                            textAnchor='middle', fillColor=colors.black))
+                            textAnchor='middle', fillColor=colors.white))
 
     elems.append(kpi_draw)
     elems.append(Spacer(1, 6*mm))
