@@ -318,7 +318,7 @@ def make_report():
     elems.append(Spacer(1, 3*mm))
     box_w = chart_w/ 4  # 4 Boxen, 3 Abstände à 6mm
     box_h = 18*mm
-    spacing = 30*mm
+    spacing = 20*mm
     red = colors.HexColor("#E63946")
 
     kpi_labels = [
