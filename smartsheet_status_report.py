@@ -241,55 +241,54 @@ def country_age_stats_for_group(client, group_code, today_date):
 def fmt_days(d):
     return f"~{int(round(d))}d"
 
-# ---- NEW: Build two ranking tables (side by side) ----
-def build_country_rank_tables(stats, width_total, col_gap=8*mm):
+# ---- Build two ranking tables (side by side) ----
+def build_country_rank_tables(stats, width_total, gap=12*mm):
     """
-    stats: list of dicts {land, avg, median, max, count}
-    Returns a list with a single Table Flowable (two tables side by side with banners).
+    Erzeugt zwei Ranglisten (Top 5) nebeneinander:
+      links:  'Am längsten ausstehende Überprüfung' (dunkelrot)
+      rechts: 'Aktivste Länder' (grün)
+    • Banner getrennt (nicht verbunden)
+    • Tabellen ohne jegliche Rahmen/Linien
+    • Tabellen mittig unter ihrem Banner
     """
-    # sort desc (longest outstanding)
+    # Top-Listen berechnen
     longest = sorted(stats, key=lambda x: x["avg"], reverse=True)[:5]
-    # sort asc (most active)
     active  = sorted(stats, key=lambda x: x["avg"])[:5]
 
-    # Table data (columns)
-    # We'll show: Rank, Land, ~AvgDays
-    def prep_rows(lst):
-        rows = []
+    def rows(lst):
+        out = []
         for i, item in enumerate(lst, start=1):
-            rows.append([i,
-                         item["land"],
-                         fmt_days(item["avg"])])
-        return rows
+            out.append([i, item["land"], f"~{int(round(item['avg']))}d"])
+        return out
 
-    left_rows  = prep_rows(longest)
-    right_rows = prep_rows(active)
+    left_rows  = rows(longest)
+    right_rows = rows(active)
 
-    # Header rows (empty here; banner is separate). Could include column headers if wanted.
-    # Build banners as Drawing (full cell width)
-    def banner(text, color_hex, w, h=9*mm):
+    # --- Banner-Builder ---
+    def make_banner(txt, hexcolor, w, h=9*mm):
         d = Drawing(w, h)
-        d.add(Rect(0,0,w,h, fillColor=colors.HexColor(color_hex), strokeColor=None))
-        d.add(String(w/2, h/2-1.5*mm, text,
-                     fontName='Helvetica-Bold', fontSize=10,
-                     textAnchor='middle', fillColor=colors.white))
+        d.add(Rect(0, 0, w, h, fillColor=colors.HexColor(hexcolor), strokeColor=None))
+        d.add(String(w/2, h/2 - 1.5*mm, txt,
+                     fontName="Helvetica-Bold", fontSize=10,
+                     textAnchor="middle", fillColor=colors.white))
         return d, h
 
-    left_banner, bh = banner("Am längsten ausstehende Überprüfung", "#8B0000", width_total/2 - col_gap/2)
-    right_banner, _ = banner("Aktivste Länder", "#2E8B57", width_total/2 - col_gap/2)
+    col_w = (width_total - gap) / 2.0
 
-    # Table style adjustments
-    base_fs = 8
+    left_banner, bh = make_banner("Am längsten ausstehende Überprüfung", "#8B0000", col_w)
+    right_banner, _ = make_banner("Aktivste Länder", "#2E8B57", col_w)
+
+    # Tabellen bauen (ohne Rahmen)
+    header = ["#", "Land", "Ø Alter"]
+    base_fs   = 8
     second_fs = base_fs + 1
     first_fs  = base_fs + 2
 
-    # Build tables
-    left_tbl  = Table([["#", "Land", "Ø Alter"]] + left_rows,
-                      colWidths=[8*mm, 22*mm, 20*mm])
-    right_tbl = Table([["#", "Land", "Ø Alter"]] + right_rows,
-                      colWidths=[8*mm, 22*mm, 20*mm])
+    left_tbl  = Table([header] + left_rows,  colWidths=[8*mm, 28*mm, 22*mm])
+    right_tbl = Table([header] + right_rows, colWidths=[8*mm, 28*mm, 22*mm])
 
-    common_style = TableStyle([
+    # Kein Grid / Box, nur Ausrichtung + Header-Farbe optional
+    base_style = [
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE", (0,0), (-1,0), base_fs),
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EEEEEE")),
@@ -297,49 +296,64 @@ def build_country_rank_tables(stats, width_total, col_gap=8*mm):
         ("ALIGN", (0,1), (0,-1), "CENTER"),
         ("ALIGN", (2,1), (2,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("INNERGRID", (0,0), (-1,-1), 0.25, colors.grey),
-        ("BOX", (0,0), (-1,-1), 0.25, colors.grey),
-    ])
+        # Rahmen & Linien explizit weg
+        ("BOX", (0,0), (-1,-1), 0, colors.white),
+        ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
+        ("LEFTPADDING", (0,0), (-1,-1), 2),
+        ("RIGHTPADDING",(0,0), (-1,-1), 2),
+        ("TOPPADDING",  (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 2),
+    ]
+    left_tbl.setStyle(TableStyle(base_style))
+    right_tbl.setStyle(TableStyle(base_style))
 
-    left_tbl.setStyle(common_style)
-    right_tbl.setStyle(common_style)
-
-    # Apply rank-specific font weight/size
-    # rows start at 1 (0 is header)
-    for tbl in (left_tbl, right_tbl):
-        # 1st place
-        tbl.setStyle(TableStyle([
-            ("FONTNAME", (0,1), (-1,1), "Helvetica-Bold"),
-            ("FONTSIZE", (0,1), (-1,1), first_fs),
-        ]))
-        # 2nd place
-        if tbl._cellvalues.__len__() > 2:
+    # Top 1/2/3 hervorheben
+    def style_ranks(tbl):
+        # Reihen: 0 = Header, 1..5 = Daten
+        if len(tbl._cellvalues) > 1:
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,1), (-1,1), "Helvetica-Bold"),
+                ("FONTSIZE", (0,1), (-1,1), first_fs),
+            ]))
+        if len(tbl._cellvalues) > 2:
             tbl.setStyle(TableStyle([
                 ("FONTNAME", (0,2), (-1,2), "Helvetica-Bold"),
                 ("FONTSIZE", (0,2), (-1,2), second_fs),
             ]))
-        # 3rd place
-        if tbl._cellvalues.__len__() > 3:
+        if len(tbl._cellvalues) > 3:
             tbl.setStyle(TableStyle([
                 ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
                 ("FONTSIZE", (0,3), (-1,3), base_fs),
             ]))
 
-    # Combine into one 2-column table
-    # Each cell will hold [banner, spacer, table]
-    spacer = Spacer(1, 2*mm)
-    left_block  = [left_banner, spacer, left_tbl]
-    right_block = [right_banner, spacer, right_tbl]
+    style_ranks(left_tbl)
+    style_ranks(right_tbl)
+
+    # Tabellen mittig unter Banner: Table.hAlign = 'CENTER'
+    left_tbl.hAlign = "CENTER"
+    right_tbl.hAlign = "CENTER"
+
+    # Blöcke zusammenbauen (Banner + kleiner Spacer + Tabelle)
+    block_spacer = Spacer(1, 2*mm)
+    left_block  = [left_banner, block_spacer, left_tbl]
+    right_block = [right_banner, block_spacer, right_tbl]
 
     outer = Table([[left_block, right_block]],
-                  colWidths=[width_total/2 - col_gap/2,
-                             width_total/2 - col_gap/2])
-
-    outer.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-    ]))
+                  colWidths=[col_w, col_w],
+                  hAlign="CENTER",
+                  style=TableStyle([
+                      ("VALIGN", (0,0), (-1,-1), "TOP"),
+                      ("LEFTPADDING", (0,0), (-1,-1), 0),
+                      ("RIGHTPADDING",(0,0), (-1,-1), 0),
+                      ("TOPPADDING",  (0,0), (-1,-1), 0),
+                      ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+                      # keine Linien am Outer:
+                      ("BOX", (0,0), (-1,-1), 0, colors.white),
+                      ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
+                  ]))
 
     return [outer]
+
 
 # ---- Optional: header builder (already there) ----
 def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
