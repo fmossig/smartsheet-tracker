@@ -1,15 +1,15 @@
 import os, csv
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
+import statistics
 
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
 from reportlab.graphics.shapes import Drawing, String, Rect
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
-
 
 # Pie
 from reportlab.graphics.charts.piecharts import Pie
@@ -46,7 +46,7 @@ EMP_COLORS = {
     "LK":  "#FFDE70",
 }
 
-CODE_VERSION = "2025-07-22_multi-groups_with_pies"
+CODE_VERSION = "2025-07-23_lists"
 
 # ---------- Spalten ----------
 COL_ARTIKEL = "Artikel"
@@ -66,23 +66,19 @@ SHEET_IDS = {
 }
 
 # ---------- Helpers ----------
-def read_snapshot_counts(date_str: str):
-    """Zählt alle Phase-Events pro Produktgruppe aus status_snapshot_<date>.csv."""
+def read_snapshot_counts(date_str):
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = {g: 0 for g in GROUP_COLORS}
     with open(snap, encoding="utf-8") as f:
         r = csv.reader(f)
-        next(r, None)  # Header
+        next(r)
         for row in r:
             grp = row[0]
             if grp in counts:
                 counts[grp] += 1
-    # gleiche Reihenfolge wie GROUP_COLORS
     return [counts[g] for g in GROUP_COLORS]
 
-
-def phase_distribution_for_group(date_str: str, group_code: str):
-    """Liefert dict {1..5: count} für Phasen in der Produktgruppe (30 Tage Snapshot)."""
+def phase_distribution_for_group(date_str, group_code):
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = {p: 0 for p in range(1, 6)}
     with open(snap, encoding="utf-8") as f:
@@ -94,12 +90,7 @@ def phase_distribution_for_group(date_str: str, group_code: str):
                     counts[p] += 1
     return counts
 
-
-def read_phase_employee_by_group(date_str: str, group_code: str):
-    """
-    dict: phase -> {emp: count} für die angegebene Produktgruppe,
-    basierend auf der Snapshot-CSV.
-    """
+def read_phase_employee_by_group(date_str, group_code):
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = defaultdict(lambda: defaultdict(int))
     with open(snap, encoding="utf-8") as f:
@@ -113,45 +104,32 @@ def read_phase_employee_by_group(date_str: str, group_code: str):
                 counts[phase][emp] += 1
     return counts
 
-
-def build_phase_pie(dist_dict: dict, diam_mm: float):
-    """
-    Erstellt ein Pie-Drawing mit weißen Rändern und PHASE_COLORS.
-    Labels werden nicht im Pie gezeigt (Legende separat).
-    """
-    from reportlab.graphics.charts.piecharts import Pie
-    from reportlab.graphics.shapes import Drawing
-    from reportlab.lib.units import mm
-
-    phases = [1, 2, 3, 4, 5]
+def build_phase_pie(dist_dict, diam_mm):
+    phases = [1,2,3,4,5]
     data   = [dist_dict.get(p, 0) for p in phases]
 
-    d = Drawing(diam_mm * mm, diam_mm * mm)
+    d = Drawing(diam_mm*mm, diam_mm*mm)
     pie = Pie()
-    pie.width = pie.height = diam_mm * mm
+    pie.width  = pie.height = diam_mm*mm
     pie.x = pie.y = 0
 
-    pie.data    = data
-    pie.labels  = []          # wir nutzen externe Legende
-    pie.simpleLabels = 1      # keine Verbindungslinien
+    pie.data   = data
+    pie.labels = []                # keine Labels direkt am Pie
+    pie.sideLabels  = 0
+    pie.simpleLabels = 1
 
-    # Weiße Ränder
+    # Ränder weiß
     pie.slices.strokeColor = colors.white
     pie.slices.strokeWidth = 0.6
 
-    # Farben setzen
+    # Farben
     for i, p in enumerate(phases):
         pie.slices[i].fillColor = colors.HexColor(PHASE_COLORS[p])
 
     d.add(pie)
     return d
 
-
-def calc_metrics_for_group(client, group_code: str, cutoff_date):
-    """
-    Berechnet KPIs für eine Produktgruppe direkt aus dem Smartsheet.
-    Rückgabe: (artikel_count, mp_count, bearbeitet, pct)
-    """
+def calc_metrics_for_group(client, group_code, cutoff_date):
     sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
     col_map = {c.title: c.id for c in sheet.columns}
 
@@ -161,11 +139,10 @@ def calc_metrics_for_group(client, group_code: str, cutoff_date):
 
     for row in sheet.rows:
         artikel_val = ""
-        link_val    = ""
-        amazon_val  = ""
-        has_recent  = False
+        link_val = ""
+        amazon_val = ""
+        has_recent = False
 
-        # Basisfelder
         for cell in row.cells:
             if cell.column_id == col_map.get(COL_ARTIKEL):
                 artikel_val = (cell.display_value or "").strip()
@@ -174,7 +151,6 @@ def calc_metrics_for_group(client, group_code: str, cutoff_date):
             elif cell.column_id == col_map.get(COL_AMAZON):
                 amazon_val = (cell.display_value or "").strip()
 
-        # Phasen-Datumsprüfung
         for col_name in PHASE_DATE_COLS:
             cid = col_map.get(col_name)
             if not cid:
@@ -188,7 +164,6 @@ def calc_metrics_for_group(client, group_code: str, cutoff_date):
                 except Exception:
                     pass
 
-        # Zählen
         if artikel_val and not link_val:
             artikel_count += 1
         if artikel_val and link_val and amazon_val:
@@ -200,15 +175,174 @@ def calc_metrics_for_group(client, group_code: str, cutoff_date):
     pct = (bearbeitet / mp_count * 100) if mp_count else 0.0
     return artikel_count, mp_count, bearbeitet, pct
 
-
-# ------- Misch-UI-Helper (Header / Legenden) -------
-from reportlab.pdfbase.pdfmetrics import stringWidth
-
-def build_group_header(grp_code: str, grp_color_hex: str, period_text="Zeitraum: 30 Tage"):
+# ---- NEW: Country stats (Avg days since last phase) ----
+def country_age_stats_for_group(client, group_code, today_date):
     """
-    Titelblock:
-      [roter Chip mit GRP]   [Daten & Kennzahlen / Zeitraum: 30 Tage]
+    Liefert pro Land (Amazon-Spalte) Durchschnitt/Median/Max Tage seit letzter Phase.
     """
+    sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
+    col_map = {c.title: c.id for c in sheet.columns}
+
+    # helper to get last phase date
+    country_days = defaultdict(list)  # land -> [tage seit letzter phase, ...]
+
+    for row in sheet.rows:
+        artikel_val = ""
+        link_val = ""
+        amazon_val = ""
+
+        # Grunddaten
+        for cell in row.cells:
+            if cell.column_id == col_map.get(COL_ARTIKEL):
+                artikel_val = (cell.display_value or "").strip()
+            elif cell.column_id == col_map.get(COL_LINK):
+                link_val = (cell.display_value or "").strip()
+            elif cell.column_id == col_map.get(COL_AMAZON):
+                amazon_val = (cell.display_value or "").strip()
+
+        # Nur Marktplatzartikel? (wie bei KPIs)
+        if not (artikel_val and link_val and amazon_val):
+            continue
+
+        # letzter Phasenzeitpunkt
+        last_dt = None
+        for col_name in PHASE_DATE_COLS:
+            cid = col_map.get(col_name)
+            if not cid:
+                continue
+            cell = next((c for c in row.cells if c.column_id == cid), None)
+            if cell and cell.value:
+                try:
+                    dt = datetime.fromisoformat(cell.value).date()
+                    if (last_dt is None) or (dt > last_dt):
+                        last_dt = dt
+                except Exception:
+                    pass
+
+        if last_dt:
+            age_days = (today_date - last_dt).days
+            country_days[amazon_val].append(age_days)
+        # Wenn kein Datum → ignorieren (oder sehr groß zählen? sag Bescheid)
+
+    stats = []
+    for land, lst in country_days.items():
+        if not lst:
+            continue
+        avg = statistics.mean(lst)
+        med = statistics.median(lst)
+        mx  = max(lst)
+        stats.append({"land": land,
+                      "avg": avg,
+                      "median": med,
+                      "max": mx,
+                      "count": len(lst)})
+    return stats
+
+def fmt_days(d):
+    return f"~{int(round(d))}d"
+
+# ---- NEW: Build two ranking tables (side by side) ----
+def build_country_rank_tables(stats, width_total, col_gap=8*mm):
+    """
+    stats: list of dicts {land, avg, median, max, count}
+    Returns a list with a single Table Flowable (two tables side by side with banners).
+    """
+    # sort desc (longest outstanding)
+    longest = sorted(stats, key=lambda x: x["avg"], reverse=True)[:5]
+    # sort asc (most active)
+    active  = sorted(stats, key=lambda x: x["avg"])[:5]
+
+    # Table data (columns)
+    # We'll show: Rank, Land, ~AvgDays
+    def prep_rows(lst):
+        rows = []
+        for i, item in enumerate(lst, start=1):
+            rows.append([i,
+                         item["land"],
+                         fmt_days(item["avg"])])
+        return rows
+
+    left_rows  = prep_rows(longest)
+    right_rows = prep_rows(active)
+
+    # Header rows (empty here; banner is separate). Could include column headers if wanted.
+    # Build banners as Drawing (full cell width)
+    def banner(text, color_hex, w, h=9*mm):
+        d = Drawing(w, h)
+        d.add(Rect(0,0,w,h, fillColor=colors.HexColor(color_hex), strokeColor=None))
+        d.add(String(w/2, h/2-1.5*mm, text,
+                     fontName='Helvetica-Bold', fontSize=10,
+                     textAnchor='middle', fillColor=colors.white))
+        return d, h
+
+    left_banner, bh = banner("Am längsten ausstehende Überprüfung", "#8B0000", width_total/2 - col_gap/2)
+    right_banner, _ = banner("Aktivste Länder", "#2E8B57", width_total/2 - col_gap/2)
+
+    # Table style adjustments
+    base_fs = 8
+    second_fs = base_fs + 1
+    first_fs  = base_fs + 2
+
+    # Build tables
+    left_tbl  = Table([["#", "Land", "Ø Alter"]] + left_rows,
+                      colWidths=[8*mm, 22*mm, 20*mm])
+    right_tbl = Table([["#", "Land", "Ø Alter"]] + right_rows,
+                      colWidths=[8*mm, 22*mm, 20*mm])
+
+    common_style = TableStyle([
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,0), base_fs),
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EEEEEE")),
+        ("ALIGN", (0,0), (-1,0), "CENTER"),
+        ("ALIGN", (0,1), (0,-1), "CENTER"),
+        ("ALIGN", (2,1), (2,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("INNERGRID", (0,0), (-1,-1), 0.25, colors.grey),
+        ("BOX", (0,0), (-1,-1), 0.25, colors.grey),
+    ])
+
+    left_tbl.setStyle(common_style)
+    right_tbl.setStyle(common_style)
+
+    # Apply rank-specific font weight/size
+    # rows start at 1 (0 is header)
+    for tbl in (left_tbl, right_tbl):
+        # 1st place
+        tbl.setStyle(TableStyle([
+            ("FONTNAME", (0,1), (-1,1), "Helvetica-Bold"),
+            ("FONTSIZE", (0,1), (-1,1), first_fs),
+        ]))
+        # 2nd place
+        if tbl._cellvalues.__len__() > 2:
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,2), (-1,2), "Helvetica-Bold"),
+                ("FONTSIZE", (0,2), (-1,2), second_fs),
+            ]))
+        # 3rd place
+        if tbl._cellvalues.__len__() > 3:
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
+                ("FONTSIZE", (0,3), (-1,3), base_fs),
+            ]))
+
+    # Combine into one 2-column table
+    # Each cell will hold [banner, spacer, table]
+    spacer = Spacer(1, 2*mm)
+    left_block  = [left_banner, spacer, left_tbl]
+    right_block = [right_banner, spacer, right_tbl]
+
+    outer = Table([[left_block, right_block]],
+                  colWidths=[width_total/2 - col_gap/2,
+                             width_total/2 - col_gap/2])
+
+    outer.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+    ]))
+
+    return [outer]
+
+# ---- Optional: header builder (already there) ----
+def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
     chip_font   = 'Helvetica-Bold'
     chip_fs     = 18
     chip_pad_x  = 4*mm
@@ -221,13 +355,12 @@ def build_group_header(grp_code: str, grp_color_hex: str, period_text="Zeitraum:
 
     gap_between = 6*mm
 
-    CHIP_TEXT_UP = 1*mm   # „NA“ minimal höher
-    TEXT_LEFT    = 2*mm   # Textblock leicht nach links
+    CHIP_TEXT_UP = 1*mm
+    TEXT_LEFT    = 2*mm
 
-    # Chip-Größe
     chip_text_w = stringWidth(grp_code, chip_font, chip_fs)
     chip_w = chip_text_w + 2*chip_pad_x
-    chip_h = chip_fs * 1.2 + 2*chip_pad_y
+    chip_h = chip_fs*1.2 + 2*chip_pad_y
 
     line1_w = stringWidth("Daten & Kennzahlen", line1_font, line1_fs)
     line2_w = stringWidth(period_text,          line2_font, line2_fs)
@@ -238,7 +371,6 @@ def build_group_header(grp_code: str, grp_color_hex: str, period_text="Zeitraum:
 
     d = Drawing(total_w, total_h)
 
-    # Chip
     d.add(Rect(0, 0, chip_w, chip_h,
                fillColor=colors.HexColor(grp_color_hex),
                strokeColor=None))
@@ -248,11 +380,11 @@ def build_group_header(grp_code: str, grp_color_hex: str, period_text="Zeitraum:
                  fontName=chip_font, fontSize=chip_fs,
                  fillColor=colors.white, textAnchor='start'))
 
-    # Textblock
     text_x = chip_w + gap_between - TEXT_LEFT
-    center_y = total_h / 2.0
-    line1_y = center_y + line1_fs * 0.35
-    line2_y = center_y - line2_fs * 1.1
+    center_y = total_h/2.0
+
+    line1_y = center_y + line1_fs*0.35
+    line2_y = center_y - line2_fs*1.1
 
     d.add(String(text_x, line1_y,
                  "Daten & Kennzahlen",
@@ -264,49 +396,6 @@ def build_group_header(grp_code: str, grp_color_hex: str, period_text="Zeitraum:
                  fillColor=colors.black, textAnchor='start'))
 
     return d, total_h
-
-
-def build_emp_legend_banner(
-    width,
-    emp_items,
-    box_size=5*mm,
-    font_sz=10,
-    gap_item=14*mm,
-    banner_color="#F2F2F2"
-):
-    """
-    Graues Banner (volle Breite) mit zentrierter Mitarbeiter-Legende.
-    Rückgabe: (Drawing, height_mm)
-    """
-    banner_h = 14*mm
-    d = Drawing(width, banner_h)
-
-    d.add(Rect(0, 0, width, banner_h,
-               fillColor=colors.HexColor(banner_color),
-               strokeColor=None))
-
-    y_center = banner_h / 2.0
-    text_y   = y_center - (font_sz * 0.35)
-
-    item_w   = box_size + 2*mm + gap_item
-    total_w  = len(emp_items) * item_w - gap_item
-    x_cursor = (width - total_w) / 2.0
-
-    for emp in emp_items:
-        d.add(Rect(x_cursor,
-                   y_center - box_size/2,
-                   box_size, box_size,
-                   fillColor=colors.HexColor(EMP_COLORS[emp]),
-                   strokeColor=None))
-        d.add(String(x_cursor + box_size + 2*mm,
-                     text_y,
-                     emp,
-                     fontName='Helvetica',
-                     fontSize=font_sz,
-                     textAnchor='start'))
-        x_cursor += item_w
-
-    return d, banner_h
 
 # ---------- Report ----------
 def make_report():
@@ -333,7 +422,7 @@ def make_report():
                               fontName='Helvetica-Bold', fontSize=20, spaceAfter=12))
     styles.add(ParagraphStyle(name='CoverInfo', parent=styles['Normal'],
                               fontName='Helvetica', fontSize=12, spaceAfter=6))
-    styles.add(ParagraphStyle(name='ChartTitle', parent=styles['Title'],
+    styles.add(ParagraphStyle(name='ChartTitle', parent=styles['Heading2'],
                               fontName='Helvetica-Bold', fontSize=14, spaceAfter=6))
 
     elems = []
@@ -350,109 +439,91 @@ def make_report():
     values = read_snapshot_counts(date_str)
 
     elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
-    elems.append(Spacer(1, 4*mm))
+    elems.append(Spacer(1, 6*mm))
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
-    elems.append(Spacer(1, 4*mm))
 
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
-
-    # >>> Bars dichter an den Seitenrand setzen
     chart_height = 55*mm
-    origin_y     = 8*mm          # statt 25mm
-    total_gap    = usable_width * 0.10
-    gap          = total_gap / (len(groups) + 1)
-    bar_width    = (usable_width - total_gap) / len(groups)
+    origin_y = 25*mm
+    total_gap = usable_width * 0.1
+    gap = total_gap / (len(groups) + 1)
+    bar_width = (usable_width - total_gap) / len(groups)
 
-    d1       = Drawing(usable_width, chart_height + origin_y)
-    max_val  = max(values) if values else 1
-    bar_x_ct = []
+    d1 = Drawing(usable_width, chart_height + origin_y + 2*mm)
+    max_val = max(values) if values else 1
+    bar_x_centers = []
 
     for i, grp in enumerate(groups):
         val = values[i]
-        x   = gap * (i + 1) + bar_width * i
-        h   = (val / max_val) * chart_height
+        x = gap * (i + 1) + bar_width * i
+        h = (val / max_val) * chart_height
 
-        # Balken
         d1.add(Rect(x, origin_y, bar_width, h,
-                    fillColor=colors.HexColor(GROUP_COLORS[grp]),
-                    strokeColor=None))
-        # Wert
-        d1.add(String(x + bar_width/2, origin_y + h + 4,
-                      str(val), fontName='Helvetica', fontSize=9,
-                      textAnchor='middle'))
-        # X‑Label
-        label_y = origin_y - 8    # dichter an die Achse
-        d1.add(String(x + bar_width/2, label_y,
-                      grp, fontName='Helvetica', fontSize=8,
-                      textAnchor='middle'))
+                    fillColor=colors.HexColor(GROUP_COLORS[grp]), strokeColor=None))
+        d1.add(String(x + bar_width/2, origin_y + h + 4, str(val),
+                      fontName='Helvetica', fontSize=9, textAnchor='middle'))
+        d1.add(String(x + bar_width/2, origin_y - 10, grp,
+                      fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
-        bar_x_ct.append(x + bar_width/2)
+        bar_x_centers.append(x + bar_width/2)
 
     elems.append(d1)
 
-    # --- Pies direkt darunter auf grauem Banner ---
+    # --- Pies auf grauem Banner ---
     PIE_BANNER_COLOR = colors.HexColor("#F2F2F2")
-    PIE_BANNER_H_MM  = 24              # noch schmaler
-    pie_diam_mm      = 18
+    PIE_BANNER_H_MM  = 32
+    pie_diam_mm = 20
 
     banner_h = PIE_BANNER_H_MM * mm
     pies_banner = Drawing(usable_width, banner_h)
     pies_banner.add(Rect(0, 0, usable_width, banner_h,
                          fillColor=PIE_BANNER_COLOR, strokeColor=None))
 
-    pie_w = pie_diam_mm * mm
-    pie_h = pie_diam_mm * mm
-    pie_y = (banner_h - pie_h) / 2.0   # vertikal mittig im Banner
+    pie_w = pie_diam_mm*mm
+    pie_h = pie_diam_mm*mm
+    pie_y = (banner_h - pie_h) / 2.0
 
     for idx, grp in enumerate(groups):
-        dist     = phase_distribution_for_group(date_str, grp)
-        pie_draw = build_phase_pie(dist, pie_diam_mm)  # enthält weißen Stroke
-        pie_x    = bar_x_ct[idx] - pie_w/2
+        dist = phase_distribution_for_group(date_str, grp)
+        pie_draw = build_phase_pie(dist, pie_diam_mm)
+        pie_x = bar_x_centers[idx] - pie_w/2
         pie_draw.translate(pie_x, pie_y)
         pies_banner.add(pie_draw)
 
-    # KEIN Spacer mehr dazwischen
     elems.append(pies_banner)
 
     # Pie-Legende
+    elems.append(Spacer(1, 3*mm))
     legend_w = usable_width
-    legend_h = 10*mm
-    leg      = Drawing(legend_w, legend_h)
-
-    box       = 5*mm
-    font_sz   = 8
-    gap_item  = 16*mm
-    items     = [1, 2, 3, 4, 5]
-    item_w    = box + 2*mm + gap_item
-    total_w   = len(items)*item_w - gap_item
-    x_cursor  = (legend_w - total_w) / 2.0
-    y_center  = legend_h / 2.0
-
+    legend_h = 12*mm
+    leg = Drawing(legend_w, legend_h)
+    box = 5*mm
+    font_sz = 8
+    gap_item = 18*mm
+    items = [1,2,3,4,5]
+    item_w = box + 2*mm + gap_item
+    total_w = len(items)*item_w - gap_item
+    x_cursor = (legend_w - total_w)/2
+    y_center = legend_h/2
     for p in items:
         leg.add(Rect(x_cursor, y_center - box/2, box, box,
-                     fillColor=colors.HexColor(PHASE_COLORS[p]),
-                     strokeColor=colors.white, strokeWidth=0.4))
-        leg.add(String(x_cursor + box + 2*mm,
-                       y_center - (font_sz*0.35),
-                       f"Phase {p}",
-                       fontName='Helvetica', fontSize=font_sz,
+                     fillColor=colors.HexColor(PHASE_COLORS[p]), strokeColor=None))
+        leg.add(String(x_cursor + box + 2*mm, y_center - 2,
+                       f"Phase {p}", fontName='Helvetica', fontSize=font_sz,
                        textAnchor='start'))
         x_cursor += item_w
-
-    elems.append(Spacer(1, 2*mm))
     elems.append(leg)
-
 
     # ---- pro Gruppe eigenes Board ----
     phases_sorted = [1, 2, 3, 4, 5]
     legend_items = list(EMP_COLORS.keys())
 
-    banner_h2 = 12*mm
-    banner_w2 = usable_width
-    legend_h2 = 10*mm
+    banner_h_grp = 12*mm
+    banner_w_grp = usable_width
+    legend_h_emp = 10*mm
     box_size = 5*mm
-    font_sz2  = 10
-    gap_item2 = 14*mm
+    font_sz_emp  = 10
+    gap_item_emp = 14*mm
 
     shrink    = 0.75
     chart_w   = usable_width * 0.45
@@ -464,24 +535,40 @@ def make_report():
     for grp in groups:
         elems.append(PageBreak())
 
-        # Banner
-        header_draw, header_h = build_group_header(grp, GROUP_COLORS[grp])
-        elems.append(header_draw)
+        # Header Chip
+        hdr_draw, _ = build_group_header(grp, GROUP_COLORS[grp])
+        elems.append(hdr_draw)
         elems.append(Spacer(1, 4*mm))
 
+        # Grauer Banner um Mitarbeiter-Legende
+        leg_width = banner_w_grp
+        leg_height = 14*mm
+        leg_draw = Drawing(leg_width, leg_height)
+        leg_draw.add(Rect(0,0,leg_width,leg_height,
+                          fillColor=colors.HexColor("#F2F2F2"), strokeColor=None))
 
-        # --- Mitarbeiter-Legende im grauen Banner (volle Breite) ---
-        leg2_draw, _ = build_emp_legend_banner(
-            width=usable_width,
-            emp_items=legend_items,
-            box_size=5*mm,
-            font_sz=10,
-            gap_item=14*mm,
-            banner_color="#F2F2F2"
-        )
-        elems.append(leg2_draw)
-        elems.append(Spacer(1, 1*mm))  # Abstand zum Chart minimal halten
+        y_center = leg_height/2
+        text_y   = y_center - (font_sz_emp * 0.35)
+        item_w   = box_size + 2*mm + gap_item_emp
+        total_w  = len(legend_items)*item_w - gap_item_emp
+        x_cursor = (leg_width - total_w) / 2.0
 
+        for emp in legend_items:
+            leg_draw.add(Rect(x_cursor,
+                              y_center - box_size/2,
+                              box_size, box_size,
+                              fillColor=colors.HexColor(EMP_COLORS[emp]),
+                              strokeColor=None))
+            leg_draw.add(String(x_cursor + box_size + 2*mm,
+                                text_y,
+                                emp,
+                                fontName='Helvetica',
+                                fontSize=font_sz_emp,
+                                textAnchor='start'))
+            x_cursor += item_w
+
+        elems.append(leg_draw)
+        elems.append(Spacer(1, 2*mm))
 
         # Gestapeltes Chart
         counts = read_phase_employee_by_group(date_str, grp)
@@ -540,7 +627,7 @@ def make_report():
 
         # KPI-Boxen
         artikel, mp, bearbeitet, pct = calc_metrics_for_group(client, grp, cutoff)
-        elems.append(Spacer(1, 1*mm))
+        elems.append(Spacer(1, 3*mm))
 
         red        = colors.HexColor(GROUP_COLORS[grp])
         box_h      = 20*mm
@@ -580,6 +667,14 @@ def make_report():
 
         elems.append(kpi_draw)
         elems.append(Spacer(1, 6*mm))
+
+        # ---- NEW: Country Rank Tables (side by side) ----
+        stats = country_age_stats_for_group(client, grp, today)
+        if stats:
+            elems.append(Spacer(1, 6*mm))
+            tables = build_country_rank_tables(stats, usable_full)
+            elems.extend(tables)
+            elems.append(Spacer(1, 6*mm))
 
     # Footer
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
