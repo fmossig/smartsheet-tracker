@@ -132,11 +132,11 @@ def make_report():
     elems.append(Spacer(1, 6*mm))
 
     # ---- GRÖSSEN & POSITIONEN ----
-    usable_width2   = (A4[0] - 2*20*mm) * 0.75   # schmäler
-    left_axis_space = 15*mm
+    usable_width2   = (A4[0] - 2*35*mm) * 0.75   # schmäler
+    left_axis_space = 5*mm
     origin_y2       = 12*mm
-    row_h           = 9*mm
-    gap_y           = 4*mm
+    row_h           = 6*mm
+    gap_y           = 2*mm
 
     total_h = len(phases_sorted) * (row_h + gap_y) + origin_y2 + 6*mm
     max_h   = A4[1] - 2*20*mm
@@ -147,7 +147,7 @@ def make_report():
         origin_y2  *= scale
         total_h     = max_h
 
-    d2 = Drawing(usable_width2 + 40*mm, total_h)  # +40mm Platz für Legende rechts
+    d2 = Drawing(usable_width2 + 70*mm, total_h)  # +40mm Platz für Legende rechts
 
     for i, phase in enumerate(phases_sorted):
         phase_total = sum(counts[phase][e] for e in emp_sorted)
@@ -178,7 +178,7 @@ def make_report():
             run_w += seg_w
 
     # Legende rechts in den Zusatzbereich
-    legend_x = usable_width2 + 5*mm
+    legend_x = usable_width2 + 10*mm
     legend_y = total_h - 8*mm
     box_h    = 4.5*mm
     for j, emp in enumerate(emp_sorted):
