@@ -111,7 +111,13 @@ def build_phase_pie(dist_dict, diam_mm):
     pie.width  = pie.height = diam_mm*mm
     pie.x = pie.y = 0
     pie.data  = data
-    pie.labels = [str(p) for p in phases]
+    pie.sideLabels  = 0              # keine seitlichen Labels
+    pie.simpleLabels = 1             # Standard-Placement
+    pie.labelRadius = pie.width/2 - 1*mm   # etwas nach innen
+    pie.slices[i].popout = 0         # sicherheitshalber
+    pie.slices[i].labelRadius = pie.labelRadius
+
+    pie.labels = []
 
     # Farben & weiße Ränder
     for i, p in enumerate(phases):
