@@ -146,27 +146,24 @@ def make_report():
     elems.append(Spacer(1, 4*mm))
 
     # 2) Horizontale Legende
-    legend_h  = 10*mm          # Gesamthöhe der Legendenzeile
-    box_size  = 5*mm           # Größe der Quadrate
-    font_sz   = 10             # Schriftgröße
-    gap_item  = 14*mm          # horizontaler Abstand zwischen Einträgen
+    legend_h  = 10*mm
+    box_size  = 5*mm
+    font_sz   = 10
+    gap_item  = 14*mm
 
     legend_w  = banner_w
     leg = Drawing(legend_w, legend_h)
 
     y_center = legend_h / 2
-    # Textbaseline sitzt etwas unter der Mitte -> optisch korrigieren:
-    text_y = y_center - (font_sz * 0.35)  # Feinjustierung fürs Auge
+    text_y   = y_center - (font_sz * 0.35)  # optische Mitte
 
     x_cursor = 0
     for emp in emp_sorted:
-        # Box vertikal mittig
         leg.add(Rect(x_cursor,
                      y_center - box_size/2,
                      box_size, box_size,
                      fillColor=colors.HexColor(EMP_COLORS[emp]),
                      strokeColor=None))
-        # Text daneben, ebenfalls optisch mittig
         leg.add(String(x_cursor + box_size + 2*mm,
                        text_y,
                        emp,
@@ -178,16 +175,18 @@ def make_report():
     elems.append(leg)
     elems.append(Spacer(1, 6*mm))
 
-
-    # 3) Gestapeltes Chart (5% kleiner)
-    shrink = 0.75
+    # 3) Gestapeltes Chart – globale Breite, nicht auf 100% pro Phase
+    shrink    = 0.75                 # 25% kleiner in der Höhe
     chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.95
     left_ax   = 20*mm
     row_h     = 8*mm * shrink
     gap_y     = 4*mm * shrink
     origin_y2 = 10*mm
 
+    # Anzahl gezeichneter Phasen
     rows_drawn = sum(1 for p in phases_sorted if sum(counts[p][e] for e in emp_sorted) > 0)
+
+    # Höhe berechnen + evtl. skalieren
     total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
     max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm
     if total_h > max_h:
@@ -199,13 +198,16 @@ def make_report():
 
     d2 = Drawing(chart_w, total_h)
 
-    # NEU: globale Skala
+    # Globale Skala: maximale Einzelzahl suchen
     global_max = 0
     for p in phases_sorted:
         for emp in emp_sorted:
             global_max = max(global_max, counts[p][emp])
-    px_per_unit = (chart_w - left_ax - 5*mm) / (global_max if global_max else 1)
 
+    avail_w    = chart_w - left_ax - 5*mm
+    px_per_unit = avail_w / (global_max if global_max else 1)
+
+    # Zeichnen
     y_index = 0
     for phase in phases_sorted:
         phase_total = sum(counts[phase][e] for e in emp_sorted)
@@ -216,6 +218,7 @@ def make_report():
         y_index += 1
         x = left_ax
 
+        # Phasenlabel
         d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
                       fontName='Helvetica', fontSize=8, textAnchor='start'))
 
@@ -224,9 +227,10 @@ def make_report():
             v = counts[phase][emp]
             if v == 0:
                 continue
-            seg_w = v * px_per_unit   # <<<< HIER
+            seg_w = v * px_per_unit            # absolute Breite
             rect = Rect(x + run_w, y, seg_w, row_h,
-                        fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
+                        fillColor=colors.HexColor(EMP_COLORS[emp]),
+                        strokeColor=None)
             d2.add(rect)
 
             if seg_w > 14:
