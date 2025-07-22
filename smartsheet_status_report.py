@@ -253,7 +253,7 @@ def build_country_rank_tables(stats,
                               banner_height=9*mm):
     """
     Zwei Ranglisten (Top 5) nebeneinander:
-      links:  'Am längsten ausstehende Überprüfung' (dunkelrot)
+      links:  'Inaktivste Länder' (dunkelrot)
       rechts: 'Aktivste Länder' (grün)
 
     • Banner schmaler (banner_shrink) und zentriert in der Spalte
@@ -289,7 +289,7 @@ def build_country_rank_tables(stats,
     bn_w  = col_w * banner_shrink  # Banner schmaler
 
     # ---- Banner bauen + zentrieren ------------------------------------------
-    left_banner  = make_banner("Am längsten ausstehende Überprüfung", "#8B0000", bn_w)
+    left_banner  = make_banner("Inaktivste Länder", "#8B0000", bn_w)
     right_banner = make_banner("Aktivste Länder", "#2E8B57", bn_w)
 
     def center_drawing_in_col(drawing, col_width):
