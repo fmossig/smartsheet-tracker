@@ -223,7 +223,7 @@ def make_report():
 
         # Phasenlabel
         d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
-                      fontName='Helvetica', fontSize=8, textAnchor='start'))
+                      fontName='Helvetica', fontSize=10, textAnchor='start'))
 
         run_w = 0
         for emp in emp_sorted:
@@ -238,7 +238,7 @@ def make_report():
 
             if seg_w > 14:
                 d2.add(String(x + run_w + seg_w/2, y + row_h/2, str(v),
-                              fontName='Helvetica-Bold', fontSize=7,
+                              fontName='Helvetica-Bold', fontSize=9,
                               textAnchor='middle', fillColor=colors.white))
             run_w += seg_w
 
