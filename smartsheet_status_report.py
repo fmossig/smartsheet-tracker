@@ -179,32 +179,40 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
     pct = (bearbeitet / mp_count * 100) if mp_count else 0.0
     return artikel_count, mp_count, bearbeitet, pct
 
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Drawing, Rect, String
+from reportlab.lib import colors
+
 def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
     """
-    Erzeugt einen Titelblock:
-    [roter Chip mit GRP]   [Daten & Kennzahlen / Zeitraum: 30 Tage]
-
-    Rückgabe: Drawing-Objekt
+    Titelblock:
+      [roter Chip mit GRP]   [Daten & Kennzahlen / Zeitraum: 30 Tage]
+    Das GRP-Label ist leicht höher gesetzt, der Textblock etwas nach links gezogen.
     """
-    # Fonts & Größen
-    chip_font      = 'Helvetica-Bold'
-    chip_fs        = 18
-    chip_pad_x     = 4*mm
-    chip_pad_y     = 2*mm
+    # --- Layout-Parameter ---
+    chip_font   = 'Helvetica-Bold'
+    chip_fs     = 18
+    chip_pad_x  = 4*mm
+    chip_pad_y  = 2*mm
 
-    line1_font     = 'Helvetica-Bold'
-    line1_fs       = 14
-    line2_font     = 'Helvetica'
-    line2_fs       = 9
+    line1_font  = 'Helvetica-Bold'
+    line1_fs    = 14
+    line2_font  = 'Helvetica'
+    line2_fs    = 9
 
-    gap_between    = 6*mm   # Abstand Chip ↔ Textblock
+    gap_between = 6*mm
 
-    # Breite des Chip-Textes messen
+    # Feinanpassungen
+    CHIP_TEXT_UP = 1*mm     # „NA“ minimal höher
+    TEXT_LEFT    = 2*mm     # beide Zeilen etwas nach links
+
+    # --- Chip-Größe berechnen ---
     chip_text_w = stringWidth(grp_code, chip_font, chip_fs)
     chip_w = chip_text_w + 2*chip_pad_x
-    chip_h = chip_fs*1.2 + 2*chip_pad_y  # Chip-Höhe (gleicht Gesamt-Höhe)
+    chip_h = chip_fs*1.2 + 2*chip_pad_y
 
-    # Textblock-Breite grob schätzen (kann egal sein, wir nutzen nur Höhe)
+    # Textblock Breite (nur informativ)
     line1_w = stringWidth("Daten & Kennzahlen", line1_font, line1_fs)
     line2_w = stringWidth(period_text,          line2_font, line2_fs)
     text_block_w = max(line1_w, line2_w)
@@ -214,28 +222,27 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     d = Drawing(total_w, total_h)
 
-    # Chip (links)
+    # --- Chip ---
     d.add(Rect(0, 0, chip_w, chip_h,
                fillColor=colors.HexColor(grp_color_hex),
                strokeColor=None))
-    d.add(String(chip_pad_x, chip_pad_y + chip_fs*0.1,
-                 grp_code, fontName=chip_font, fontSize=chip_fs,
+    d.add(String(chip_pad_x,
+                 chip_pad_y + chip_fs*0.1 + CHIP_TEXT_UP,
+                 grp_code,
+                 fontName=chip_font, fontSize=chip_fs,
                  fillColor=colors.white, textAnchor='start'))
 
-    # Textblock (rechts)
-    text_x = chip_w + gap_between
-    # Vertikale Mitte:
+    # --- Textblock ---
+    text_x = chip_w + gap_between - TEXT_LEFT
     center_y = total_h/2.0
 
-    # Zeile 1 etwas über Mitte
     line1_y = center_y + line1_fs*0.35
+    line2_y = center_y - line2_fs*1.1
+
     d.add(String(text_x, line1_y,
                  "Daten & Kennzahlen",
                  fontName=line1_font, fontSize=line1_fs,
                  fillColor=colors.black, textAnchor='start'))
-
-    # Zeile 2 etwas unter Mitte
-    line2_y = center_y - line2_fs*1.1
     d.add(String(text_x, line2_y,
                  period_text,
                  fontName=line2_font, fontSize=line2_fs,
