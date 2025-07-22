@@ -665,10 +665,10 @@ def make_report():
         elems.append(Spacer(1, 3*mm))
 
         red        = colors.HexColor(GROUP_COLORS[grp])
-        box_h      = 20*mm
+        box_h      = 18*mm
         spacing    = 10*mm
-        font_val   = 14
-        font_lab   = 9
+        font_val   = 12
+        font_lab   = 7
 
         kpis = [
             ("Anzahl Artikel",       artikel),
