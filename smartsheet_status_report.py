@@ -223,7 +223,7 @@ def make_report():
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
 
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
-    chart_height = 60*mm
+    chart_height = 55*mm
     origin_y = 25*mm
     total_gap = usable_width * 0.1
     gap = total_gap / (len(groups) + 1)
@@ -250,8 +250,6 @@ def make_report():
     elems.append(d1)
 
     # --- Pies auf grauem Banner ---
-    elems.append(Spacer(1, 2*mm))  # kleiner Abstand
-
     PIE_BANNER_COLOR = colors.HexColor("#F2F2F2")
     PIE_BANNER_H_MM  = 32
     pie_diam_mm = 20
