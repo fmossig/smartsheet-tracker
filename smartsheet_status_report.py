@@ -316,34 +316,56 @@ def make_report():
     artikel, mp, bearbeitet, pct = calc_na_metrics(cutoff)
 
     elems.append(Spacer(1, 3*mm))
-    box_w = chart_w/ 4  # 4 Boxen, 3 Abstände à 6mm
-    box_h = 18*mm
-    spacing = 15*mm
-    red = colors.HexColor("#E63946")
+
+    # Layout-Parameter
+    light_blue = colors.HexColor("#D8F0FF")
+    box_h      = 18*mm
+    spacing    = 6*mm          # Abstand zwischen Boxen
+    font_val   = 12
+    font_lab   = 8
 
     kpi_labels = [
-        ("Anzahl Artikel", artikel),
-        ("Anzahl Marktplatzartikel", mp),
+        ("Anzahl Artikel",                artikel),
+        ("Anzahl Marktplatzartikel",      mp),
         ("Individuell bearbeitete Artikel", bearbeitet),
-        ("% bearbeitet", f"{pct:.1f}%"),
+        ("% bearbeitet",                  f"{pct:.1f}%"),
     ]
 
+    # Breite so wählen, dass alle 4 Boxen + Abstände auf chart_w passen
+    # und das ganze Paket zentriert ist.
+    n = len(kpi_labels)
+    total_spacing = spacing * (n - 1)
+    # z.B. 4 Boxen à 0.22 * chart_w → ca. 88% + spacing
+    box_w = (chart_w * 0.88 - total_spacing) / n
+    if box_w < 30*mm:  # Sicherheitsuntergrenze
+        box_w = 30*mm
+
+    total_width = n * box_w + total_spacing
+    start_x = (chart_w - total_width) / 2.0  # zentrieren
+
     kpi_draw = Drawing(chart_w, box_h)
+
     for i, (label, value) in enumerate(kpi_labels):
-        x = i * (box_w + spacing)
+        x = start_x + i * (box_w + spacing)
+
+        # Box
         kpi_draw.add(Rect(x, 0, box_w, box_h,
-                          fillColor=red, strokeColor=None))
-        kpi_draw.add(String(x + box_w/2, box_h*0.62,
+                          fillColor=light_blue, strokeColor=None))
+        # Wert
+        kpi_draw.add(String(x + box_w/2, box_h * 0.62,
                             str(value),
-                            fontName='Helvetica-Bold', fontSize=12,
-                            textAnchor='middle', fillColor=colors.white))
-        kpi_draw.add(String(x + box_w/2, box_h*0.28,
+                            fontName='Helvetica-Bold', fontSize=font_val,
+                            textAnchor='middle', fillColor=colors.black))
+        # Label (automatisch umbrochen? ReportLab-String bricht nicht,
+        # deshalb kleiner Font und mehr Breite)
+        kpi_draw.add(String(x + box_w/2, box_h * 0.28,
                             label,
-                            fontName='Helvetica-Bold', fontSize=8,
-                            textAnchor='middle', fillColor=colors.white))
+                            fontName='Helvetica', fontSize=font_lab,
+                            textAnchor='middle', fillColor=colors.black))
 
     elems.append(kpi_draw)
     elems.append(Spacer(1, 6*mm))
+
 
     # ---- Footer ----
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
