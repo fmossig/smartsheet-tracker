@@ -223,75 +223,85 @@ def make_report():
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
 
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
-    chart_height = 55*mm
-    origin_y = 25*mm
-    total_gap = usable_width * 0.1
-    gap = total_gap / (len(groups) + 1)
-    bar_width = (usable_width - total_gap) / len(groups)
 
-    d1 = Drawing(usable_width, chart_height + origin_y + 2*mm)
-    max_val = max(values) if values else 1
-    bar_x_centers = []
+    chart_height = 55*mm
+    origin_y     = 25*mm
+    total_gap    = usable_width * 0.10
+    gap          = total_gap / (len(groups) + 1)
+    bar_width    = (usable_width - total_gap) / len(groups)
+
+    d1       = Drawing(usable_width, chart_height + origin_y + 2*mm)
+    max_val  = max(values) if values else 1
+    bar_x_ct = []
 
     for i, grp in enumerate(groups):
         val = values[i]
-        x = gap * (i + 1) + bar_width * i
-        h = (val / max_val) * chart_height
+        x   = gap * (i + 1) + bar_width * i
+        h   = (val / max_val) * chart_height
 
         d1.add(Rect(x, origin_y, bar_width, h,
-                    fillColor=colors.HexColor(GROUP_COLORS[grp]), strokeColor=None))
+                    fillColor=colors.HexColor(GROUP_COLORS[grp]),
+                    strokeColor=None))
         d1.add(String(x + bar_width/2, origin_y + h + 4, str(val),
                       fontName='Helvetica', fontSize=9, textAnchor='middle'))
         d1.add(String(x + bar_width/2, origin_y - 10, grp,
                       fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
-        bar_x_centers.append(x + bar_width/2)
+        bar_x_ct.append(x + bar_width/2)
 
     elems.append(d1)
 
-    # --- Pies auf grauem Banner ---
+    # --- Pies auf grauem Banner (enger) ---
     PIE_BANNER_COLOR = colors.HexColor("#F2F2F2")
-    PIE_BANNER_H_MM  = 32
-    pie_diam_mm = 20
+    PIE_BANNER_H_MM  = 28          # etwas niedriger
+    pie_diam_mm      = 18          # kleinerer Durchmesser
 
     banner_h = PIE_BANNER_H_MM * mm
     pies_banner = Drawing(usable_width, banner_h)
     pies_banner.add(Rect(0, 0, usable_width, banner_h,
                          fillColor=PIE_BANNER_COLOR, strokeColor=None))
 
-    pie_w = pie_diam_mm*mm
-    pie_h = pie_diam_mm*mm
-    pie_y = (banner_h - pie_h) / 2.0  # vertikal mittig
+    pie_w = pie_diam_mm * mm
+    pie_h = pie_diam_mm * mm
+    pie_y = (banner_h - pie_h) / 2.0  # vertikal mittig im Banner
 
     for idx, grp in enumerate(groups):
-        dist = phase_distribution_for_group(date_str, grp)
-        pie_draw = build_phase_pie(dist, pie_diam_mm)
-        pie_x = bar_x_centers[idx] - pie_w/2
+        dist     = phase_distribution_for_group(date_str, grp)
+        pie_draw = build_phase_pie(dist, pie_diam_mm)  # enthält weißen Stroke!
+        pie_x    = bar_x_ct[idx] - pie_w/2
         pie_draw.translate(pie_x, pie_y)
         pies_banner.add(pie_draw)
 
+    # Abstand stark reduzieren
+    elems.append(Spacer(1, 2*mm))
     elems.append(pies_banner)
+    elems.append(Spacer(1, 2*mm))
 
-    # Pie-Legende
-    elems.append(Spacer(1, 4*mm))
+    # Pie-Legende (Phase 1–5)
     legend_w = usable_width
-    legend_h = 12*mm
-    leg = Drawing(legend_w, legend_h)
-    box = 5*mm
-    font_sz = 8
-    gap_item = 18*mm
-    items = [1,2,3,4,5]
-    item_w = box + 2*mm + gap_item
-    total_w = len(items)*item_w - gap_item
-    x_cursor = (legend_w - total_w)/2
-    y_center = legend_h/2
+    legend_h = 10*mm
+    leg      = Drawing(legend_w, legend_h)
+
+    box       = 5*mm
+    font_sz   = 8
+    gap_item  = 16*mm
+    items     = [1, 2, 3, 4, 5]
+    item_w    = box + 2*mm + gap_item
+    total_w   = len(items)*item_w - gap_item
+    x_cursor  = (legend_w - total_w) / 2.0
+    y_center  = legend_h / 2.0
+
     for p in items:
         leg.add(Rect(x_cursor, y_center - box/2, box, box,
-                     fillColor=colors.HexColor(PHASE_COLORS[p]), strokeColor=None))
-        leg.add(String(x_cursor + box + 2*mm, y_center - 2,
-                       f"Phase {p}", fontName='Helvetica', fontSize=font_sz,
+                     fillColor=colors.HexColor(PHASE_COLORS[p]),
+                     strokeColor=colors.white, strokeWidth=0.4))
+        leg.add(String(x_cursor + box + 2*mm,
+                       y_center - (font_sz*0.35),
+                       f"Phase {p}",
+                       fontName='Helvetica', fontSize=font_sz,
                        textAnchor='start'))
         x_cursor += item_w
+
     elems.append(leg)
 
     # ---- pro Gruppe eigenes Board ----
