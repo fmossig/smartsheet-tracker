@@ -139,7 +139,7 @@ def make_report():
                     strokeColor=None))
     banner.add(String(banner_w/2, banner_h/2,
                       "Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)",
-                      fontName='Helvetica-Bold', fontSize=12,
+                      fontName='Helvetica-Bold', fontSize=16,
                       textAnchor='middle', fillColor=colors.white))
     elems.append(PageBreak())
     elems.append(banner)
@@ -159,7 +159,7 @@ def make_report():
         leg.add(Rect(x_cursor, y_center - box_size/2, box_size, box_size,
                      fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
         leg.add(String(x_cursor + box_size + 2*mm, y_center,
-                       emp, fontName='Helvetica', fontSize=8,
+                       emp, fontName='Helvetica', fontSize=10,
                        textAnchor='start'))
         x_cursor += box_size + 2*mm + gap_item
 
@@ -168,7 +168,7 @@ def make_report():
 
     # 3) Gestapeltes Chart (25% kleiner)
     shrink = 0.75
-    chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.70
+    chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.95
     left_ax   = 20*mm
     row_h     = 8*mm * shrink
     gap_y     = 4*mm * shrink
