@@ -316,7 +316,7 @@ def make_report():
     artikel, mp, bearbeitet, pct = calc_na_metrics(cutoff)
 
     elems.append(Spacer(1, 3*mm))
-    box_w = (chart_w - 3*25*mm) / 4   # 4 Boxen, 3 Abstände à 6mm
+    box_w = (chart_w - 3*6*mm) / 4   # 4 Boxen, 3 Abstände à 6mm
     box_h = 18*mm
     spacing = 25*mm
     red = colors.HexColor("#E63946")
