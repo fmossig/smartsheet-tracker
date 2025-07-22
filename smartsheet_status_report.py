@@ -339,7 +339,7 @@ def make_report():
                             textAnchor='middle', fillColor=colors.white))
         kpi_draw.add(String(x + box_w/2, box_h*0.28,
                             label,
-                            fontName='Helvetica', fontSize=8,
+                            fontName='Helvetica-Bold', fontSize=8,
                             textAnchor='middle', fillColor=colors.white))
 
     elems.append(kpi_draw)
