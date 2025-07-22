@@ -325,8 +325,8 @@ def make_report():
 
     kpi_labels = [
         ("Anzahl Artikel",                 artikel),
-        ("Anzahl Marktplatzartikel",       mp),
-        ("Individuell bearbeitete Artikel", bearbeitet),
+        ("Marktplatzartikel",       mp),
+        ("Bearbeitete Artikel", bearbeitet),
         ("% bearbeitet",                   f"{pct:.1f}%"),
     ]
 
