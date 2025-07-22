@@ -227,7 +227,7 @@ def make_report():
         banner.add(Rect(0, 0, banner_w, banner_h,
                         fillColor=colors.HexColor(GROUP_COLORS[grp]), strokeColor=None))
         banner.add(String(banner_w/2, banner_h/2,
-                          f"Mitarbeiterbasierte Phasenstatistik ({grp}, 30 Tage)",
+                          f"Produktgruppe ({grp}, Daten für 30 Tage)",
                           fontName='Helvetica-Bold', fontSize=18,
                           textAnchor='middle', fillColor=colors.white))
         elems.append(banner)
@@ -322,8 +322,8 @@ def make_report():
         red        = colors.HexColor(GROUP_COLORS[grp])
         box_h      = 20*mm
         spacing    = 10*mm
-        font_val   = 12
-        font_lab   = 8
+        font_val   = 14
+        font_lab   = 9
 
         kpis = [
             ("Anzahl Artikel",              artikel),
