@@ -540,7 +540,7 @@ def make_report():
 
         # KPI-Boxen
         artikel, mp, bearbeitet, pct = calc_metrics_for_group(client, grp, cutoff)
-        elems.append(Spacer(1, 3*mm))
+        elems.append(Spacer(1, 1*mm))
 
         red        = colors.HexColor(GROUP_COLORS[grp])
         box_h      = 20*mm
