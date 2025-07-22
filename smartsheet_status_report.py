@@ -9,6 +9,9 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 
+# Pie
+from reportlab.graphics.charts.piecharts import Pie
+
 # Smartsheet
 import smartsheet
 from dotenv import load_dotenv
@@ -22,7 +25,15 @@ GROUP_COLORS = {
     "NP": "#F4A261",
     "NT": "#9D4EDD",
     "NV": "#00B4D8",
-    "NM": "#E9C46A",  # falls doppelt ok
+}
+
+# Phase-Farben (konstant für alle Gruppen)
+PHASE_COLORS = {
+    1: "#1F77B4",  # Blau
+    2: "#FF7F0E",  # Orange
+    3: "#2CA02C",  # Grün
+    4: "#9467BD",  # Violett
+    5: "#D62728",  # Rot
 }
 
 EMP_COLORS = {
@@ -34,7 +45,7 @@ EMP_COLORS = {
     "LK":  "#FFDE70",
 }
 
-CODE_VERSION = "2025-07-22_multi-groups"
+CODE_VERSION = "2025-07-22_multi-groups_with_pies"
 
 # ---------- Spalten ----------
 COL_ARTIKEL = "Artikel"
@@ -82,6 +93,39 @@ def read_phase_employee_by_group(date_str, group_code):
                 counts[phase][emp] += 1
     return counts
 
+def phase_distribution_for_group(date_str, group_code):
+    """Return dict {1..5: count} for phases in that group (30 Tage)."""
+    snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
+    counts = {p: 0 for p in range(1, 6)}
+    with open(snap, encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        for row in r:
+            if row["Produktgruppe"] == group_code:
+                p = int(row["Phase"])
+                if p in counts:
+                    counts[p] += 1
+    return counts
+
+def build_phase_pie(dist_dict, diameter_mm):
+    """Return a Drawing with just a pie (no legend)."""
+    d = Drawing(diameter_mm*mm, diameter_mm*mm)
+    p = Pie()
+    p.x = 0
+    p.y = 0
+    p.width  = diameter_mm*mm
+    p.height = diameter_mm*mm
+
+    data = [dist_dict[p_] for p_ in range(1,6)]
+    p.data = data
+    p.labels = None
+    p.slices.strokeWidth = 0
+
+    for idx, ph in enumerate(range(1,6)):
+        p.slices[idx].fillColor = colors.HexColor(PHASE_COLORS[ph])
+
+    d.add(p)
+    return d
+
 def calc_metrics_for_group(client, group_code, cutoff_date):
     """Compute KPI values from Smartsheet for one group."""
     sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
@@ -105,7 +149,6 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
             elif cell.column_id == col_map.get(COL_AMAZON):
                 amazon_val = (cell.display_value or "").strip()
 
-        # phases
         for col_name in PHASE_DATE_COLS:
             cid = col_map.get(col_name)
             if not cid: 
@@ -167,7 +210,7 @@ def make_report():
     elems.append(Paragraph(f"CODE_VERSION: {CODE_VERSION}", styles['CoverInfo']))
     elems.append(PageBreak())
 
-    # Chart 1: Gesamt-Produktgruppen
+    # ----- Seite: Produktgruppen Balken + Pies -----
     groups = list(GROUP_COLORS.keys())
     values = read_snapshot_counts(date_str)
 
@@ -182,8 +225,11 @@ def make_report():
     gap = total_gap / (len(groups) + 1)
     bar_width = (usable_width - total_gap) / len(groups)
 
+    # Balken-Drawing
     d1 = Drawing(usable_width, chart_height + origin_y + 2*mm)
     max_val = max(values) if values else 1
+
+    bar_x_centers = []  # merken für Pies darunter
 
     for i, grp in enumerate(groups):
         val = values[i]
@@ -197,9 +243,61 @@ def make_report():
         d1.add(String(x + bar_width/2, origin_y - 10, grp,
                       fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
+        bar_x_centers.append(x + bar_width/2)
+
     elems.append(d1)
 
-    # ---- pro Gruppe eigenes Board ----
+    # Pies unter Balken
+    elems.append(Spacer(1, 6*mm))
+    elems.append(Paragraph("Phasenverteilung je Produktgruppe (Pie)", styles['ChartTitle']))
+
+    pie_diam_mm = 28  # Durchmesser
+    pie_height = pie_diam_mm*mm
+    pies_y = pie_height  # Höhe des Drawings
+
+    pies_draw = Drawing(usable_width, pies_y)
+
+    for idx, grp in enumerate(groups):
+        dist = phase_distribution_for_group(date_str, grp)
+        pie = build_phase_pie(dist, pie_diam_mm)
+
+        # Linke Oberkante des Pie setzen:
+        # wir wollen das Pie-Zentrum unter dem Balken-Zentrum
+        pie_w = pie_diam_mm*mm
+        pie_x = bar_x_centers[idx] - pie_w/2
+        # in Drawing-Koordinaten: (0,0) ist unten links; wir packen pies nach unten
+        pie_y = 0
+
+        # Verschieben des Pie (Gruppe)
+        pie.translate(pie_x, pie_y)
+        pies_draw.add(pie)
+
+    elems.append(pies_draw)
+
+    # Legende für Pies (global für alle Gruppen)
+    elems.append(Spacer(1, 4*mm))
+    elems.append(Paragraph("Legende Phasen (alle Gruppen)", styles['Normal']))
+    legend_w = usable_width
+    legend_h = 12*mm
+    leg = Drawing(legend_w, legend_h)
+    box = 5*mm
+    font_sz = 8
+    gap_item = 18*mm
+    items = list(PHASE_COLORS.keys())
+    item_w = box + 2*mm + gap_item
+    total_w = len(items)*item_w - gap_item
+    x_cursor = (legend_w - total_w)/2
+    y_center = legend_h/2
+    for p in items:
+        leg.add(Rect(x_cursor, y_center - box/2, box, box,
+                     fillColor=colors.HexColor(PHASE_COLORS[p]), strokeColor=None))
+        leg.add(String(x_cursor + box + 2*mm, y_center - 2,
+                       f"Phase {p}", fontName='Helvetica', fontSize=font_sz,
+                       textAnchor='start'))
+        x_cursor += item_w
+    elems.append(leg)
+
+    # ---- pro Gruppe eigenes Board (Seite) ----
     phases_sorted = [1, 2, 3, 4, 5]
     legend_items = list(EMP_COLORS.keys())  # immer gleich
 
@@ -210,7 +308,6 @@ def make_report():
     font_sz  = 10
     gap_item = 14*mm
 
-    # Breite für NA-Chart etc. (wir verwenden dieselben Maße für alle)
     shrink    = 0.75
     chart_w   = usable_width * 0.45
     left_ax   = 15*mm
@@ -218,8 +315,7 @@ def make_report():
     gap_y     = 4*mm * shrink
     origin_y2 = 10*mm
 
-    for idx, grp in enumerate(groups):
-        # PageBreak nach dem ersten Gesamtchart
+    for grp in groups:
         elems.append(PageBreak())
 
         # Banner
@@ -233,8 +329,8 @@ def make_report():
         elems.append(banner)
         elems.append(Spacer(1, 4*mm))
 
-        # Legende (zentriert – immer gleiche Emp-Liste)
-        leg = Drawing(banner_w, legend_h)
+        # Emp-Legende
+        leg2 = Drawing(banner_w, legend_h)
         y_center = legend_h / 2
         text_y   = y_center - (font_sz * 0.35)
         item_w   = box_size + 2*mm + gap_item
@@ -242,26 +338,25 @@ def make_report():
         x_cursor = (banner_w - total_w) / 2.0
 
         for emp in legend_items:
-            leg.add(Rect(x_cursor,
-                         y_center - box_size/2,
-                         box_size, box_size,
-                         fillColor=colors.HexColor(EMP_COLORS[emp]),
-                         strokeColor=None))
-            leg.add(String(x_cursor + box_size + 2*mm,
-                           text_y,
-                           emp,
-                           fontName='Helvetica',
-                           fontSize=font_sz,
-                           textAnchor='start'))
+            leg2.add(Rect(x_cursor,
+                          y_center - box_size/2,
+                          box_size, box_size,
+                          fillColor=colors.HexColor(EMP_COLORS[emp]),
+                          strokeColor=None))
+            leg2.add(String(x_cursor + box_size + 2*mm,
+                            text_y,
+                            emp,
+                            fontName='Helvetica',
+                            fontSize=font_sz,
+                            textAnchor='start'))
             x_cursor += item_w
 
-        elems.append(leg)
+        elems.append(leg2)
         elems.append(Spacer(1, 2*mm))
 
         # Gestapeltes Chart (horizontal)
         counts = read_phase_employee_by_group(date_str, grp)
 
-        # Phasenanzahl bleibt 5, selbst wenn 0
         rows_drawn = len(phases_sorted)
         total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
         max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm
@@ -274,7 +369,6 @@ def make_report():
 
         d2 = Drawing(chart_w, total_h)
 
-        # global max wert
         global_max = 0
         for p in phases_sorted:
             for emp in legend_items:
@@ -295,7 +389,6 @@ def make_report():
             run_w = 0
             phase_total = sum(counts[phase][e] for e in legend_items)
             if phase_total == 0:
-                # Placeholder
                 d2.add(Rect(x, y, 1, row_h, fillColor=None, strokeColor=colors.grey))
                 continue
 
@@ -305,7 +398,8 @@ def make_report():
                     continue
                 seg_w = v * px_per_unit
                 rect = Rect(x + run_w, y, seg_w, row_h,
-                            fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
+                            fillColor=colors.HexColor(EMP_COLORS[emp]),
+                            strokeColor=None)
                 d2.add(rect)
                 if seg_w > 14:
                     d2.add(String(x + run_w + seg_w/2, y + row_h/2, str(v),
@@ -326,10 +420,10 @@ def make_report():
         font_lab   = 9
 
         kpis = [
-            ("Anzahl Artikel",              artikel),
-            ("Marktplatzartikel",           mp),
-            ("Bearbeitete Artikel",         bearbeitet),
-            ("% bearbeitet",                f"{pct:.1f}%"),
+            ("Anzahl Artikel",       artikel),
+            ("Marktplatzartikel",    mp),
+            ("Bearbeitete Artikel",  bearbeitet),
+            ("% bearbeitet",         f"{pct:.1f}%"),
         ]
 
         usable_full = usable_width
