@@ -303,6 +303,134 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     return d, total_h
 
+def build_country_rank_tables(stats,
+                              width_total,
+                              gap_between_tables=12*mm,
+                              shift_right=6*mm,
+                              banner_shrink=0.8,
+                              banner_height=9*mm):
+    """
+    Zwei Ranglisten (Top 5) nebeneinander:
+      links:  'Inaktivste Länder' (dunkelrot)
+      rechts: 'Aktivste Länder'   (grün)
+    • Banner schmaler (banner_shrink) und zentriert
+    • Abstand der beiden Spalten: gap_between_tables
+    • Tabellen ohne Linien; Top1/2/3 größer/fett
+    • shift_right verschiebt beide Tabellen minimal nach rechts
+    """
+    # ---- Daten vorbereiten ---------------------------------------------------
+    longest = sorted(stats, key=lambda x: x["avg"], reverse=True)[:5]
+    active  = sorted(stats, key=lambda x: x["avg"])[:5]
+
+    def rows(lst):
+        out = []
+        for i, item in enumerate(lst, start=1):
+            out.append([i, item["land"], f"~{int(round(item['avg']))}d"])
+        return out
+
+    left_rows  = rows(longest)
+    right_rows = rows(active)
+
+    # ---- Banner Helper -------------------------------------------------------
+    def make_banner(txt, hexcolor, w, h=banner_height):
+        d = Drawing(w, h)
+        d.add(Rect(0, 0, w, h, fillColor=colors.HexColor(hexcolor), strokeColor=None))
+        d.add(String(w/2, h/2 - 1.5*mm, txt,
+                     fontName="Helvetica-Bold", fontSize=10,
+                     textAnchor="middle", fillColor=colors.white))
+        return d
+
+    # Basisbreiten
+    col_w = (width_total - gap_between_tables) / 2.0
+    bn_w  = col_w * banner_shrink
+
+    left_banner  = make_banner("Inaktivste Länder", "#8B0000", bn_w)
+    right_banner = make_banner("Aktivste Länder",   "#2E8B57", bn_w)
+
+    # zentrieren der Drawings in ihrer Spalte
+    def center_draw(drawing, col_width):
+        t = Table([[drawing]], colWidths=[col_width], hAlign="CENTER")
+        t.setStyle(TableStyle([
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING",(0,0), (-1,-1), 0),
+            ("TOPPADDING",  (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+            ("BOX", (0,0), (-1,-1), 0, colors.white),
+            ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
+        ]))
+        return t
+
+    left_banner_tbl  = center_draw(left_banner,  col_w)
+    right_banner_tbl = center_draw(right_banner, col_w)
+
+    # Tabellen ohne Linien
+    header    = ["#", "Land", "Ø Alter"]
+    base_fs   = 8
+    second_fs = base_fs + 1
+    first_fs  = base_fs + 2
+
+    left_tbl  = Table([header] + left_rows,  colWidths=[8*mm, 28*mm, 22*mm], hAlign="CENTER")
+    right_tbl = Table([header] + right_rows, colWidths=[8*mm, 28*mm, 22*mm], hAlign="CENTER")
+
+    base_style = [
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,0), base_fs),
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EEEEEE")),
+        ("ALIGN", (0,0), (-1,0), "CENTER"),
+        ("ALIGN", (0,1), (0,-1), "CENTER"),
+        ("ALIGN", (2,1), (2,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("BOX", (0,0), (-1,-1), 0, colors.white),
+        ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
+        ("LEFTPADDING",  (0,0), (-1,-1), 2),
+        ("RIGHTPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING",   (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 2),
+    ]
+    left_tbl.setStyle(TableStyle(base_style))
+    right_tbl.setStyle(TableStyle(base_style))
+
+    # Rank-Styling
+    def style_ranks(tbl):
+        if len(tbl._cellvalues) > 1:
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,1), (-1,1), "Helvetica-Bold"),
+                ("FONTSIZE", (0,1), (-1,1), first_fs),
+            ]))
+        if len(tbl._cellvalues) > 2:
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,2), (-1,2), "Helvetica-Bold"),
+                ("FONTSIZE", (0,2), (-1,2), second_fs),
+            ]))
+        if len(tbl._cellvalues) > 3:
+            tbl.setStyle(TableStyle([
+                ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
+                ("FONTSIZE", (0,3), (-1,3), base_fs),
+            ]))
+    style_ranks(left_tbl)
+    style_ranks(right_tbl)
+
+    block_spacer = Spacer(1, 2*mm)
+    left_block  = [left_banner_tbl,  block_spacer, left_tbl]
+    right_block = [right_banner_tbl, block_spacer, right_tbl]
+
+    # Outer Table mit Gap & optionalem Shift nach rechts
+    outer = Table([[left_block, "", right_block]],
+                  colWidths=[col_w, gap_between_tables, col_w],
+                  hAlign="CENTER",
+                  style=TableStyle([
+                      ("VALIGN", (0,0), (-1,-1), "TOP"),
+                      ("LEFTPADDING", (0,0), (0,-1), shift_right),   # shift left col
+                      ("RIGHTPADDING",(2,0), (2,-1), 0),
+                      ("LEFTPADDING", (2,0), (2,-1), shift_right),   # shift right col
+                      ("TOPPADDING",  (0,0), (-1,-1), 0),
+                      ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+                      ("BOX", (0,0), (-1,-1), 0, colors.white),
+                      ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
+                  ]))
+
+    return [outer]
 
 # ---------- Report ----------
 def make_report():
@@ -582,11 +710,10 @@ def make_report():
         # stats: Liste von Dicts: {"land": <str>, "avg": <float Tage>}
         stats = country_age_stats_for_group(client, grp, today)
         if stats:
-                elems.append(Spacer(1, 6*mm))          # optional
-                elems.extend(build_country_rank_tables(stats, usable_full,
-                                                       gap_between_tables=18*mm,
-                                                       banner_shrink=0.8))
-                elems.append(Spacer(1, 6*mm))          # optional
+            elems.append(Spacer(1, 6*mm))
+            elems.extend(build_country_rank_tables(stats, usable_full))
+            elems.append(Spacer(1, 6*mm))
+      # optional
 
     # --------------- Footer & Build ---------------
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
