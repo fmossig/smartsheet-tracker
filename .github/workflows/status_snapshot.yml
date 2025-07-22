@@ -26,7 +26,7 @@ jobs:
           pip install --upgrade pip
           pip install smartsheet-python-sdk python-dotenv reportlab
 
-      - name: Create snapshot & summary
+      - name: Create 30‑day snapshot & summary
         run: python smartsheet_status_snapshot.py
 
       - name: Generate PDF report
@@ -37,9 +37,9 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
 
-          # Unstaged Changes stashen, Remote‑main updaten, dann Stash zurückholen
+          # Änderungen sichern, Remote holen, wiederherstellen
           git stash --include-untracked
-          git pull --rebase origin main
+          git pull --rebase origin main || true
           git stash pop || true
 
           DATE=$(date +'%Y-%m-%d')
