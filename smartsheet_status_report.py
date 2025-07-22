@@ -177,7 +177,7 @@ def make_report():
 
     # 3) Gestapeltes Chart – globale Breite, nicht auf 100% pro Phase
     shrink    = 0.75                 # 25% kleiner in der Höhe
-    chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.85
+    chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.65
     left_ax   = 20*mm
     row_h     = 8*mm * shrink
     gap_y     = 4*mm * shrink
