@@ -1,4 +1,4 @@
-import csv, os
+import os, csv
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -9,6 +9,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 
+# Smartsheet API
+import smartsheet
+from dotenv import load_dotenv
+
 # ---------- Farben ----------
 GROUP_COLORS = {
     "NA": "#E63946",
@@ -17,7 +21,7 @@ GROUP_COLORS = {
     "NM": "#E9C46A",
     "NP": "#F4A261",
     "NT": "#9D4EDD",
-    "NV": "#00B4D8"
+    "NV": "#00B4D8",
 }
 
 EMP_COLORS = {
@@ -29,7 +33,17 @@ EMP_COLORS = {
     "LK":  "#FFDE70",
 }
 
-CODE_VERSION = "2025-07-22_17h30_banner"  # << zum Erkennen der aktuellen Version
+CODE_VERSION = "2025-07-22_17h30_banner+KPI"
+
+# ---------- Spaltennamen ----------
+COL_ARTIKEL = "Artikel"
+COL_LINK    = "Link"
+COL_AMAZON  = "Amazon"
+
+PHASE_DATE_COLS = ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"]
+
+# ---------- Sheet ID nur für NA ----------
+SHEET_ID_NA = 6141179298008964  # <- deine echte NA-ID hier lassen/prüfen
 
 # ---------- Datenhelpers ----------
 def read_snapshot_counts(date_str):
@@ -59,6 +73,60 @@ def read_na_phase_employee(date_str):
             if emp in EMP_COLORS:
                 counts[phase][emp] += 1
     return counts
+
+def calc_na_metrics(cutoff_date):
+    """Berechnet Kennzahlen nur für NA direkt aus dem Sheet."""
+    load_dotenv()
+    token = os.getenv("SMARTSHEET_TOKEN")
+    client = smartsheet.Smartsheet(token)
+
+    sheet = client.Sheets.get_sheet(SHEET_ID_NA)
+    col_map = {c.title: c.id for c in sheet.columns}
+
+    artikel_count = 0
+    mp_count = 0
+    touched_rows = set()
+
+    for row in sheet.rows:
+        artikel_val = ""
+        link_val = ""
+        amazon_val = ""
+        has_recent = False
+
+        # Basisfelder
+        for cell in row.cells:
+            if cell.column_id == col_map.get(COL_ARTIKEL):
+                artikel_val = (cell.display_value or "").strip()
+            elif cell.column_id == col_map.get(COL_LINK):
+                link_val = (cell.display_value or "").strip()
+            elif cell.column_id == col_map.get(COL_AMAZON):
+                amazon_val = (cell.display_value or "").strip()
+
+        # Phase-Datumsprüfung
+        for col_name in PHASE_DATE_COLS:
+            cid = col_map.get(col_name)
+            if not cid:
+                continue
+            cell = next((c for c in row.cells if c.column_id == cid), None)
+            if cell and cell.value:
+                try:
+                    dt = datetime.fromisoformat(cell.value).date()
+                    if dt >= cutoff_date:
+                        has_recent = True
+                except Exception:
+                    pass
+
+        # Zählen
+        if artikel_val and not link_val:
+            artikel_count += 1
+        if artikel_val and link_val and amazon_val:
+            mp_count += 1
+        if has_recent:
+            touched_rows.add(row.id)
+
+    bearbeitet = len(touched_rows)
+    pct = (bearbeitet / mp_count * 100) if mp_count else 0.0
+    return artikel_count, mp_count, bearbeitet, pct
 
 # ---------- Report ----------
 def make_report():
@@ -130,7 +198,7 @@ def make_report():
     phases_sorted = [1, 2, 3, 4, 5]
     emp_sorted = [e for e in EMP_COLORS if any(counts[p][e] for p in phases_sorted)]
 
-    # 1) Titel-Banner (volle Breite, NA-Farbe)
+    # Titel-Banner
     banner_h = 12*mm
     banner_w = A4[0] - (doc.leftMargin + doc.rightMargin)
     banner = Drawing(banner_w, banner_h)
@@ -145,25 +213,22 @@ def make_report():
     elems.append(banner)
     elems.append(Spacer(1, 4*mm))
 
-    # 2) Horizontale Legende (zentriert)
+    # Legende (zentriert)
     legend_h  = 10*mm
     box_size  = 5*mm
     font_sz   = 10
     gap_item  = 14*mm
     legend_w  = banner_w
-    
+
     leg = Drawing(legend_w, legend_h)
     y_center = legend_h / 2
     text_y   = y_center - (font_sz * 0.35)
 
-    # Breite aller Items berechnen
     items = emp_sorted
-    item_width = box_size + 2*mm + gap_item   # grob pro Item
-    total_items_w = len(items)*item_width - gap_item  # letzter hat kein gap mehr
-    
-    # Start so wählen, dass Gesamtbreite mittig ist
+    item_width = box_size + 2*mm + gap_item
+    total_items_w = len(items)*item_width - gap_item
     x_cursor = (legend_w - total_items_w) / 2.0
-    
+
     for emp in items:
         leg.add(Rect(x_cursor,
                      y_center - box_size/2,
@@ -177,21 +242,21 @@ def make_report():
                        fontSize=font_sz,
                        textAnchor='start'))
         x_cursor += item_width
-    
-    elems.append(leg)
 
-    # 3) Gestapeltes Chart – globale Breite, nicht auf 100% pro Phase
-    shrink    = 0.75                 # 25% kleiner in der Höhe
+    elems.append(leg)
+    elems.append(Spacer(1, 2*mm))  # kleiner Abstand zur Grafik
+
+    # Gestapeltes Chart – globale Breite
+    shrink    = 0.75
     chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.45
     left_ax   = 15*mm
     row_h     = 8*mm * shrink
     gap_y     = 4*mm * shrink
     origin_y2 = 10*mm
 
-    # Anzahl gezeichneter Phasen
+    # Alle Phasen zeichnen (auch wenn 0)
     rows_drawn = len(phases_sorted)
 
-    # Höhe berechnen + evtl. skalieren
     total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
     max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm
     if total_h > max_h:
@@ -203,39 +268,40 @@ def make_report():
 
     d2 = Drawing(chart_w, total_h)
 
-    # Globale Skala: maximale Einzelzahl suchen
+    # Globale Maximalbreite
     global_max = 0
     for p in phases_sorted:
         for emp in emp_sorted:
             global_max = max(global_max, counts[p][emp])
 
-    avail_w    = chart_w - left_ax - 5*mm
+    avail_w     = chart_w - left_ax - 5*mm
     px_per_unit = avail_w / (global_max if global_max else 1)
 
-    # Zeichnen
     y_index = 0
     for phase in phases_sorted:
-        phase_total = sum(counts[phase][e] for e in emp_sorted)
-
         y = origin_y2 + (rows_drawn - 1 - y_index) * (row_h + gap_y)
         y_index += 1
         x = left_ax
 
-        # Phasenlabel
         d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
                       fontName='Helvetica', fontSize=8, textAnchor='start'))
 
         run_w = 0
+        phase_total = sum(counts[phase][e] for e in emp_sorted)
+        if phase_total == 0:
+            # Platzhalterlinie oder leer lassen
+            d2.add(Rect(x, y, 1, row_h, fillColor=None, strokeColor=colors.grey))
+            continue
+
         for emp in emp_sorted:
             v = counts[phase][emp]
             if v == 0:
                 continue
-            seg_w = v * px_per_unit            # absolute Breite
+            seg_w = v * px_per_unit
             rect = Rect(x + run_w, y, seg_w, row_h,
                         fillColor=colors.HexColor(EMP_COLORS[emp]),
                         strokeColor=None)
             d2.add(rect)
-
             if seg_w > 14:
                 d2.add(String(x + run_w + seg_w/2, y + row_h/2, str(v),
                               fontName='Helvetica-Bold', fontSize=9,
@@ -243,6 +309,38 @@ def make_report():
             run_w += seg_w
 
     elems.append(d2)
+
+    # --- KPI-Boxen NA unter dem Chart ---
+    artikel, mp, bearbeitet, pct = calc_na_metrics(cutoff)
+
+    elems.append(Spacer(1, 3*mm))
+    box_w = (chart_w - 3*6*mm) / 4   # 4 Boxen, 3 Abstände à 6mm
+    box_h = 18*mm
+    spacing = 6*mm
+    light_blue = colors.HexColor("#D8F0FF")
+
+    kpi_labels = [
+        ("Anzahl Artikel", artikel),
+        ("Anzahl Marktplatzartikel", mp),
+        ("Individuell bearbeitete Artikel", bearbeitet),
+        ("% bearbeitet", f"{pct:.1f}%"),
+    ]
+
+    kpi_draw = Drawing(chart_w, box_h)
+    for i, (label, value) in enumerate(kpi_labels):
+        x = i * (box_w + spacing)
+        kpi_draw.add(Rect(x, 0, box_w, box_h,
+                          fillColor=light_blue, strokeColor=None))
+        kpi_draw.add(String(x + box_w/2, box_h*0.62,
+                            str(value),
+                            fontName='Helvetica-Bold', fontSize=12,
+                            textAnchor='middle', fillColor=colors.black))
+        kpi_draw.add(String(x + box_w/2, box_h*0.28,
+                            label,
+                            fontName='Helvetica', fontSize=8,
+                            textAnchor='middle', fillColor=colors.black))
+
+    elems.append(kpi_draw)
     elems.append(Spacer(1, 6*mm))
 
     # ---- Footer ----
