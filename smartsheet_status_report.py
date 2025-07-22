@@ -179,7 +179,7 @@ def make_report():
         x_cursor += item_width
     
     elems.append(leg)
-    elems.append(Spacer(1, 6*mm))
+    elems.append(Spacer(1, 2*mm))
 
     # 3) Gestapeltes Chart – globale Breite, nicht auf 100% pro Phase
     shrink    = 0.75                 # 25% kleiner in der Höhe
@@ -190,7 +190,7 @@ def make_report():
     origin_y2 = 10*mm
 
     # Anzahl gezeichneter Phasen
-    rows_drawn = sum(1 for p in phases_sorted if sum(counts[p][e] for e in emp_sorted) > 0)
+    rows_drawn = len(phases_sorted)
 
     # Höhe berechnen + evtl. skalieren
     total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
@@ -217,8 +217,6 @@ def make_report():
     y_index = 0
     for phase in phases_sorted:
         phase_total = sum(counts[phase][e] for e in emp_sorted)
-        if phase_total == 0:
-            continue
 
         y = origin_y2 + (rows_drawn - 1 - y_index) * (row_h + gap_y)
         y_index += 1
