@@ -165,9 +165,11 @@ def make_report():
     groups = list(GROUP_COLORS.keys())
     values = read_snapshot_counts(date_str)
 
-    elems.append(Paragraph("NA - Produktgruppen Daten (30 Tage)", styles['ChartTitle']))
+    elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
     elems.append(Spacer(1, 6*mm))
 
+    elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produkt", styles['ChartTitle']))
+    
     usable_width = A4[0] - 2*20*mm
     chart_height = 60*mm
     origin_y = 25*mm
@@ -316,8 +318,8 @@ def make_report():
     elems.append(Spacer(1, 3*mm))
     box_w = (chart_w - 3*6*mm) / 4   # 4 Boxen, 3 Abstände à 6mm
     box_h = 18*mm
-    spacing = 6*mm
-    light_blue = colors.HexColor("#D8F0FF")
+    spacing = 15*mm
+    red = colors.HexColor("#E63946")
 
     kpi_labels = [
         ("Anzahl Artikel", artikel),
@@ -330,7 +332,7 @@ def make_report():
     for i, (label, value) in enumerate(kpi_labels):
         x = i * (box_w + spacing)
         kpi_draw.add(Rect(x, 0, box_w, box_h,
-                          fillColor=light_blue, strokeColor=None))
+                          fillColor=red, strokeColor=None))
         kpi_draw.add(String(x + box_w/2, box_h*0.62,
                             str(value),
                             fontName='Helvetica-Bold', fontSize=12,
