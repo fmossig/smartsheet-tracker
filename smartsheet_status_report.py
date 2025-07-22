@@ -77,7 +77,7 @@ def make_report():
 
     # Bar-Chart manuell zeichnen
     usable_width = A4[0] - 2*20*mm  # nutzbare Breite
-    chart_height = 80*mm
+    chart_height = 60*mm
     origin_x = 0
     origin_y = 15*mm
 
@@ -106,6 +106,98 @@ def make_report():
                            grp, fontName='Helvetica', fontSize=8, textAnchor='middle'))
 
     elems.append(drawing)
+        # --- Gestapeltes Balkendiagramm NA (Phasen 1–5 nach Mitarbeiter) ---
+    from collections import defaultdict
+
+    # 1) Farben der Mitarbeitenden festlegen
+    EMP_COLORS = {
+        "DM": "#223459",
+        "EK": "#6A5AAA",
+        "HI": "#B45082",
+        "SM": "#F9767F",
+        "JHU": "#FFB142",
+        "LK": "#FFDE70",
+    }
+
+    # 2) Snapshot einlesen und auf NA filtern
+    snap_path = os.path.join("status", f"status_snapshot_{date_str}.csv")
+    data_rows = []
+    with open(snap_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row["Produktgruppe"] == "NA":
+                phase = int(row["Phase"])
+                emp = (row["Mitarbeiter"] or "").strip()
+                if emp:  # nur wenn Mitarbeiter gesetzt
+                    data_rows.append((phase, emp))
+
+    # 3) Pivot: Phase -> Mitarbeiter -> Count
+    counts = defaultdict(lambda: defaultdict(int))
+    emp_set = set()
+    for phase, emp in data_rows:
+        counts[phase][emp] += 1
+        emp_set.add(emp)
+
+    phases_sorted = [1, 2, 3, 4, 5]
+    # nur Mitarbeiter aufnehmen, die in EMP_COLORS stehen (Rest optional ignorieren)
+    emp_sorted = [e for e in EMP_COLORS if e in emp_set]
+
+    # 4) Neues Blatt/Seite + Titel
+    elems.append(PageBreak())
+    elems.append(Paragraph("Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)", styles['ChartTitle']))
+    elems.append(Spacer(1, 6*mm))
+
+    # 5) Zeichnungsfläche definieren
+    usable_width2 = A4[0] - 2*20*mm
+    row_h = 10*mm
+    gap_y = 8*mm
+    left_axis_space = 22*mm
+    origin_x2 = 0
+    origin_y2 = 15*mm
+    total_h = len(phases_sorted) * (row_h + gap_y) + origin_y2 + 10*mm
+
+    d2 = Drawing(usable_width2, total_h)
+
+    # Max pro Phase für Skalierung
+    max_total = max((sum(counts[p][e] for e in emp_sorted) for p in phases_sorted), default=1)
+
+    # 6) Gestapelte Balken pro Phase zeichnen (horizontal)
+    for idx_p, phase in enumerate(phases_sorted):
+        y = origin_y2 + (len(phases_sorted) - 1 - idx_p) * (row_h + gap_y)
+        x = left_axis_space
+        # Phasenlabel links
+        d2.add(String(0, y + row_h / 2, f"Phase {phase}", fontName='Helvetica', fontSize=9, textAnchor='start'))
+
+        run_w = 0
+        for emp in emp_sorted:
+            val = counts[phase][emp]
+            if val == 0:
+                continue
+            seg_w = (val / max_total) * (usable_width2 - left_axis_space - 5*mm)
+            rect = Rect(x + run_w, y, seg_w, row_h,
+                        fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
+            d2.add(rect)
+
+            # Beschriftung nur wenn genug Platz
+            if seg_w > 12:
+                d2.add(String(x + run_w + seg_w / 2, y + row_h / 2,
+                              str(val), fontName='Helvetica-Bold', fontSize=8,
+                              textAnchor='middle', fillColor=colors.white))
+            run_w += seg_w
+
+    # 7) Legende
+    legend_x = usable_width2 - 40*mm
+    legend_y = total_h - 10*mm
+    box_h = 5*mm
+    for i, emp in enumerate(emp_sorted):
+        yy = legend_y - i * (box_h + 2*mm)
+        d2.add(Rect(legend_x, yy, box_h, box_h,
+                    fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
+        d2.add(String(legend_x + box_h + 3*mm, yy + box_h / 2,
+                      emp, fontName='Helvetica', fontSize=8, textAnchor='start'))
+
+    elems.append(d2)
+    elems.append(Spacer(1, 6*mm))
 
     # Fußzeile
     elems.append(Spacer(1, 6*mm))
