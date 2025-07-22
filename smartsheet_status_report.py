@@ -139,32 +139,44 @@ def make_report():
                     strokeColor=None))
     banner.add(String(banner_w/2, banner_h/2,
                       "Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)",
-                      fontName='Helvetica-Bold', fontSize=16,
+                      fontName='Helvetica-Bold', fontSize=18,
                       textAnchor='middle', fillColor=colors.white))
     elems.append(PageBreak())
     elems.append(banner)
     elems.append(Spacer(1, 4*mm))
 
     # 2) Horizontale Legende
-    legend_h = 8*mm
-    legend_w = banner_w
+    legend_h  = 10*mm          # Gesamthöhe der Legendenzeile
+    box_size  = 5*mm           # Quadrate etwas größer
+    font_sz   = 10             # Textgröße
+    gap_item  = 14*mm          # Abstand zwischen Einträgen (anpassen nach Bedarf)
+
+    legend_w  = banner_w
     leg = Drawing(legend_w, legend_h)
 
-    box_size = 4*mm
-    x_cursor = 0
-    y_center = legend_h/2
-    gap_item = 12*mm  # Abstand von einem Eintrag zum nächsten (Textbreite grob)
+    y_center = legend_h / 2    # Mitte der Zeile
 
+    x_cursor = 0
     for emp in emp_sorted:
-        leg.add(Rect(x_cursor, y_center - box_size/2, box_size, box_size,
-                     fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
-        leg.add(String(x_cursor + box_size + 2*mm, y_center,
-                       emp, fontName='Helvetica', fontSize=10,
+        # Box
+        leg.add(Rect(x_cursor,
+                     y_center - box_size/2,   # vertikal mittig ausrichten
+                     box_size, box_size,
+                     fillColor=colors.HexColor(EMP_COLORS[emp]),
+                     strokeColor=None))
+        # Text (Baseline mittig -> textAnchor='start' + y_center nutzen)
+        leg.add(String(x_cursor + box_size + 2*mm,
+                       y_center,
+                       emp,
+                       fontName='Helvetica',
+                       fontSize=font_sz,
                        textAnchor='start'))
+        # Cursor verschieben (Box + Textbreite grob)
         x_cursor += box_size + 2*mm + gap_item
 
     elems.append(leg)
     elems.append(Spacer(1, 6*mm))
+
 
     # 3) Gestapeltes Chart (25% kleiner)
     shrink = 0.75
