@@ -122,26 +122,59 @@ def make_report():
 
     elems.append(d1)
 
-    # ---- Chart 2: Gestapelt NA ----
+ # ---- Chart 2: Gestapelt NA ----
     counts = read_na_phase_employee(date_str)
     phases_sorted = [1, 2, 3, 4, 5]
     emp_sorted = [e for e in EMP_COLORS if any(counts[p][e] for p in phases_sorted)]
 
-    elems.append(PageBreak())
-    elems.append(Paragraph("Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)", styles['ChartTitle']))
+    # 1) Titel-Banner (volle Breite, NA-Farbe)
+    banner_h = 14*mm
+    banner_w = A4[0] - (doc.leftMargin + doc.rightMargin)
+    banner = Drawing(banner_w, banner_h)
+    banner.add(Rect(0, 0, banner_w, banner_h,
+                    fillColor=colors.HexColor(GROUP_COLORS["NA"]),
+                    strokeColor=None))
+    banner.add(String(banner_w/2, banner_h/2,
+                      "Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)",
+                      fontName='Helvetica-Bold', fontSize=12,
+                      textAnchor='middle', fillColor=colors.white))
+    elems.append(banner)
+    elems.append(Spacer(1, 4*mm))
+
+    # 2) Horizontale Legende (farbige Quadrate + Kürzel)
+    legend_h = 8*mm
+    legend_w = banner_w
+    leg = Drawing(legend_w, legend_h)
+    box_size = 4*mm
+    gap_x = 6*mm   # Abstand zwischen Einträgen
+    x_cursor = 0
+    y_center = legend_h/2
+
+    for emp in emp_sorted:
+        # Falls in eine neue Zeile müsste, hier wrap/zweite Zeile implementieren.
+        # Für 6 Einträge passen wir in einer Zeile.
+        leg.add(Rect(x_cursor, y_center - box_size/2, box_size, box_size,
+                     fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
+        leg.add(String(x_cursor + box_size + 2*mm, y_center,
+                       emp, fontName='Helvetica', fontSize=8,
+                       textAnchor='start'))
+        x_cursor += box_size + 2*mm + 12*mm  # Eintragbreite
+
+    elems.append(leg)
     elems.append(Spacer(1, 6*mm))
 
-    # Größen & Positionen
-    chart_w   = (A4[0] - 2*20*mm) * 0.68   # Chart-Breite (~68% der Seite)
-    legend_w  = 45*mm                      # Platz für Legende rechts
-    total_w   = chart_w + legend_w
-    left_ax   = 20*mm                      # Platz für „Phase x“
-    row_h     = 8*mm
-    gap_y     = 4*mm
-    origin_y2 = 14*mm
+    # 3) Chart: 25% kleiner als vorher
+    shrink = 0.75  # 75% der ursprünglichen Höhe
+    chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.70
+    left_ax   = 20*mm
+    row_h     = 8*mm * shrink
+    gap_y     = 4*mm * shrink
+    origin_y2 = 10*mm
 
-    total_h = len(phases_sorted) * (row_h + gap_y) + origin_y2 + 6*mm
-    max_h   = A4[1] - 2*20*mm
+    # Höhe berechnen, ggf. skalieren falls zu hoch
+    rows_drawn = sum(1 for p in phases_sorted if sum(counts[p][e] for e in emp_sorted) > 0)
+    total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
+    max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm  # Sicherheitsabzug
     if total_h > max_h:
         scale = max_h / total_h
         row_h     *= scale
@@ -149,16 +182,19 @@ def make_report():
         origin_y2 *= scale
         total_h    = max_h
 
-    d2 = Drawing(total_w, total_h)
+    d2 = Drawing(chart_w, total_h)
 
-    # Balken pro Phase (eigene Skalierung)
-    for i, phase in enumerate(phases_sorted):
+    # Zeichnen (pro Phase skaliert)
+    y_index = 0
+    for phase in phases_sorted:
         phase_total = sum(counts[phase][e] for e in emp_sorted)
         if phase_total == 0:
             continue
 
-        y = origin_y2 + (len(phases_sorted)-1-i) * (row_h + gap_y)
+        y = origin_y2 + (rows_drawn - 1 - y_index) * (row_h + gap_y)
+        y_index += 1
         x = left_ax
+
         d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
                       fontName='Helvetica', fontSize=8, textAnchor='start'))
 
@@ -168,7 +204,7 @@ def make_report():
             v = counts[phase][emp]
             if v == 0:
                 continue
-            seg_w = max((v / phase_total) * avail_w, 2)  # Mindestbreite 2 px
+            seg_w = max((v / phase_total) * avail_w, 2)
             rect = Rect(x + run_w, y, seg_w, row_h,
                         fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
             d2.add(rect)
@@ -179,20 +215,9 @@ def make_report():
                               textAnchor='middle', fillColor=colors.white))
             run_w += seg_w
 
-    # Legende rechts
-    legend_x = chart_w + 5*mm
-    legend_y = total_h - 8*mm
-    box_h    = 4.5*mm
-    for j, emp in enumerate(emp_sorted):
-        yy = legend_y - j*(box_h + 2*mm)
-        d2.add(Rect(legend_x, yy, box_h, box_h,
-                    fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
-        d2.add(String(legend_x + box_h + 2*mm, yy + box_h/2,
-                      emp, fontName='Helvetica', fontSize=7, textAnchor='start'))
-
     elems.append(d2)
     elems.append(Spacer(1, 6*mm))
-
+    
     # ---- Footer ----
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
