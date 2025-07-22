@@ -667,7 +667,7 @@ def make_report():
         red        = colors.HexColor(GROUP_COLORS[grp])
         box_h      = 18*mm
         spacing    = 10*mm
-        font_val   = 12
+        font_val   = 14
         font_lab   = 7
 
         kpis = [
