@@ -712,10 +712,11 @@ def make_report():
         # stats: Liste von Dicts: {"land": <str>, "avg": <float Tage>}
         stats = country_age_stats_for_group(client, grp, today)
         if stats:
-            elems.append(Spacer(1, 6*mm))
-            tables = build_country_rank_tables(stats, width_total=usable_full, gap=8*mm)
-            elems.extend(tables)
-            elems.append(Spacer(1, 6*mm))
+                elems.append(Spacer(1, 6*mm))          # optional
+                elems.extend(build_country_rank_tables(stats, usable_full,
+                                                       gap_between_tables=18*mm,
+                                                       banner_shrink=0.8))
+                elems.append(Spacer(1, 6*mm))          # optional
 
     # --------------- Footer & Build ---------------
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
