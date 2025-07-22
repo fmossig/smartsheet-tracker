@@ -219,18 +219,19 @@ def make_report():
     values = read_snapshot_counts(date_str)
 
     elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
-    elems.append(Spacer(1, 6*mm))
+    elems.append(Spacer(1, 4*mm))
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
 
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
 
+    # >>> Bars dichter an den Seitenrand setzen
     chart_height = 55*mm
-    origin_y     = 25*mm
+    origin_y     = 8*mm          # statt 25mm
     total_gap    = usable_width * 0.10
     gap          = total_gap / (len(groups) + 1)
     bar_width    = (usable_width - total_gap) / len(groups)
 
-    d1       = Drawing(usable_width, chart_height + origin_y + 2*mm)
+    d1       = Drawing(usable_width, chart_height + origin_y)
     max_val  = max(values) if values else 1
     bar_x_ct = []
 
@@ -239,22 +240,28 @@ def make_report():
         x   = gap * (i + 1) + bar_width * i
         h   = (val / max_val) * chart_height
 
+        # Balken
         d1.add(Rect(x, origin_y, bar_width, h,
                     fillColor=colors.HexColor(GROUP_COLORS[grp]),
                     strokeColor=None))
-        d1.add(String(x + bar_width/2, origin_y + h + 4, str(val),
-                      fontName='Helvetica', fontSize=9, textAnchor='middle'))
-        d1.add(String(x + bar_width/2, origin_y - 10, grp,
-                      fontName='Helvetica', fontSize=8, textAnchor='middle'))
+        # Wert
+        d1.add(String(x + bar_width/2, origin_y + h + 4,
+                      str(val), fontName='Helvetica', fontSize=9,
+                      textAnchor='middle'))
+        # X‑Label
+        label_y = origin_y - 8    # dichter an die Achse
+        d1.add(String(x + bar_width/2, label_y,
+                      grp, fontName='Helvetica', fontSize=8,
+                      textAnchor='middle'))
 
         bar_x_ct.append(x + bar_width/2)
 
     elems.append(d1)
 
-    # --- Pies auf grauem Banner (enger) ---
+    # --- Pies direkt darunter auf grauem Banner ---
     PIE_BANNER_COLOR = colors.HexColor("#F2F2F2")
-    PIE_BANNER_H_MM  = 28          # etwas niedriger
-    pie_diam_mm      = 18          # kleinerer Durchmesser
+    PIE_BANNER_H_MM  = 24              # noch schmaler
+    pie_diam_mm      = 18
 
     banner_h = PIE_BANNER_H_MM * mm
     pies_banner = Drawing(usable_width, banner_h)
@@ -263,21 +270,19 @@ def make_report():
 
     pie_w = pie_diam_mm * mm
     pie_h = pie_diam_mm * mm
-    pie_y = (banner_h - pie_h) / 2.0  # vertikal mittig im Banner
+    pie_y = (banner_h - pie_h) / 2.0   # vertikal mittig im Banner
 
     for idx, grp in enumerate(groups):
         dist     = phase_distribution_for_group(date_str, grp)
-        pie_draw = build_phase_pie(dist, pie_diam_mm)  # enthält weißen Stroke!
+        pie_draw = build_phase_pie(dist, pie_diam_mm)  # enthält weißen Stroke
         pie_x    = bar_x_ct[idx] - pie_w/2
         pie_draw.translate(pie_x, pie_y)
         pies_banner.add(pie_draw)
 
-    # Abstand stark reduzieren
-    elems.append(Spacer(1, 2*mm))
+    # KEIN Spacer mehr dazwischen
     elems.append(pies_banner)
-    elems.append(Spacer(1, 2*mm))
 
-    # Pie-Legende (Phase 1–5)
+    # Pie-Legende
     legend_w = usable_width
     legend_h = 10*mm
     leg      = Drawing(legend_w, legend_h)
@@ -302,7 +307,9 @@ def make_report():
                        textAnchor='start'))
         x_cursor += item_w
 
+    elems.append(Spacer(1, 2*mm))
     elems.append(leg)
+
 
     # ---- pro Gruppe eigenes Board ----
     phases_sorted = [1, 2, 3, 4, 5]
