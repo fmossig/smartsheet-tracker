@@ -14,6 +14,8 @@ from reportlab.platypus import Table, TableStyle, Spacer
 from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib import colors
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+
 
 # Pie
 from reportlab.graphics.charts.piecharts import Pie
@@ -70,6 +72,39 @@ SHEET_IDS = {
 }
 
 # ---------- Helpers ----------
+def draw_footer(canvas, doc):
+    """Zwei Logos links unten platzieren."""
+    # Pfade
+    amz_path = "assets/amazon_logo.png"
+    noc_path = "assets/noctua_logo.png"
+
+    # gewünschte Höhe (automatisch skaliert in der Breite)
+    logo_h = 8*mm
+    padding = 2*mm
+    gap = 4*mm   # Abstand zwischen den Logos
+
+    # Bild laden (liefert Breite/Höhe in px)
+    amz = ImageReader(amz_path)
+    noc = ImageReader(noc_path)
+
+    amz_w, amz_h = amz.getSize()
+    noc_w, noc_h = noc.getSize()
+
+    # Seitenverhältnis erhalten
+    amz_scale = logo_h / amz_h
+    noc_scale = logo_h / noc_h
+
+    amz_w_pt = amz_w * amz_scale
+    noc_w_pt = noc_w * noc_scale
+
+    # Position: links unten, innerhalb der Seitenränder
+    x0 = doc.leftMargin
+    y0 = doc.bottomMargin - logo_h - padding  # direkt unterhalb des Textbereichs
+
+    # Amazon zuerst, dann Noctua rechts daneben
+    canvas.drawImage(amz, x0, y0, width=amz_w_pt, height=logo_h, mask='auto')
+    canvas.drawImage(noc, x0 + amz_w_pt + gap, y0, width=noc_w_pt, height=logo_h, mask='auto')
+
 def read_snapshot_counts(date_str):
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = {g: 0 for g in GROUP_COLORS}
@@ -718,7 +753,7 @@ def make_report():
     # --------------- Footer & Build ---------------
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
-    doc.build(elems)
+    doc.build(elems, onFirstPage=draw_footer, onLaterPages=draw_footer)
     print(f"✅ PDF Report erstellt: {pdf_file}")
 
 if __name__ == "__main__":
