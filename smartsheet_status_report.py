@@ -122,78 +122,74 @@ def make_report():
 
     elems.append(d1)
 
-# ---- Chart 2: Gestapelt NA ----
-counts = read_na_phase_employee(date_str)
-phases_sorted = [1, 2, 3, 4, 5]
-emp_sorted = [e for e in EMP_COLORS if any(counts[p][e] for p in phases_sorted)]
+ # ---- Chart 2: Gestapelt NA ----
+    counts = read_na_phase_employee(date_str)
+    phases_sorted = [1, 2, 3, 4, 5]
+    emp_sorted = [e for e in EMP_COLORS if any(counts[p][e] for p in phases_sorted)]
 
-elems.append(PageBreak())
-elems.append(Paragraph("Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)", styles['ChartTitle']))
-elems.append(Spacer(1, 6*mm))
+    elems.append(PageBreak())
+    elems.append(Paragraph("Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)", styles['ChartTitle']))
+    elems.append(Spacer(1, 6*mm))
 
-# ---- GRÖSSEN & POSITIONEN ----
-usable_width2   = (A4[0] - 2*20*mm) * 0.75   # 75% der Seitenbreite
-left_axis_space = 25*mm                      # mehr Platz für „Phase x“
-origin_x2       = 0
-origin_y2       = 12*mm
-row_h           = 9*mm
-gap_y           = 4*mm
+    # ---- GRÖSSEN & POSITIONEN ----
+    usable_width2   = (A4[0] - 2*20*mm) * 0.75   # schmäler
+    left_axis_space = 15*mm
+    origin_y2       = 12*mm
+    row_h           = 9*mm
+    gap_y           = 4*mm
 
-# Höhe berechnen + ggf. skalieren
-total_h   = len(phases_sorted) * (row_h + gap_y) + origin_y2 + 6*mm
-max_h     = A4[1] - 2*20*mm
-if total_h > max_h:
-    scale = max_h / total_h
-    row_h      *= scale
-    gap_y      *= scale
-    origin_y2  *= scale
-    total_h     = max_h
+    total_h = len(phases_sorted) * (row_h + gap_y) + origin_y2 + 6*mm
+    max_h   = A4[1] - 2*20*mm
+    if total_h > max_h:
+        scale = max_h / total_h
+        row_h      *= scale
+        gap_y      *= scale
+        origin_y2  *= scale
+        total_h     = max_h
 
-d2 = Drawing(usable_width2, total_h)
+    d2 = Drawing(usable_width2 + 40*mm, total_h)  # +40mm Platz für Legende rechts
 
-for i, phase in enumerate(phases_sorted):
-    # Phase überspringen, wenn gar keine Werte
-    phase_total = sum(counts[phase][e] for e in emp_sorted)
-    if phase_total == 0:
-        continue
-
-    y = origin_y2 + (len(phases_sorted) - 1 - i) * (row_h + gap_y)
-    x = left_axis_space
-    d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
-                  fontName='Helvetica', fontSize=8, textAnchor='start'))
-
-    run_w = 0
-    avail_w = usable_width2 - left_axis_space - 5*mm
-    for emp in emp_sorted:
-        val = counts[phase][emp]
-        if val == 0:
+    for i, phase in enumerate(phases_sorted):
+        phase_total = sum(counts[phase][e] for e in emp_sorted)
+        if phase_total == 0:
             continue
-        seg_w = (val / phase_total) * avail_w
-        if seg_w < 3:  # Mindestbreite
-            seg_w = 3
-        rect = Rect(x + run_w, y, seg_w, row_h,
-                    fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
-        d2.add(rect)
 
-        if seg_w > 12:
-            d2.add(String(x + run_w + seg_w/2, y + row_h/2, str(val),
-                          fontName='Helvetica-Bold', fontSize=7,
-                          textAnchor='middle', fillColor=colors.white))
-        run_w += seg_w
+        y = origin_y2 + (len(phases_sorted) - 1 - i) * (row_h + gap_y)
+        x = left_axis_space
+        d2.add(String(2*mm, y + row_h/2, f"Phase {phase}",
+                      fontName='Helvetica', fontSize=8, textAnchor='start'))
 
-# Legende (nach links versetzt, keine Überschneidung)
-legend_x = usable_width2 - 30*mm
-legend_y = total_h - 8*mm
-box_h    = 4.5*mm
-for j, emp in enumerate(emp_sorted):
-    yy = legend_y - j*(box_h + 2*mm)
-    d2.add(Rect(legend_x, yy, box_h, box_h,
-                fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
-    d2.add(String(legend_x + box_h + 2*mm, yy + box_h/2,
-                  emp, fontName='Helvetica', fontSize=7, textAnchor='start'))
+        run_w   = 0
+        avail_w = usable_width2 - left_axis_space - 5*mm
+        for emp in emp_sorted:
+            val = counts[phase][emp]
+            if val == 0:
+                continue
+            seg_w = (val / phase_total) * avail_w
+            seg_w = max(seg_w, 3)  # Mindestbreite
+            rect = Rect(x + run_w, y, seg_w, row_h,
+                        fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
+            d2.add(rect)
 
-elems.append(d2)
-elems.append(Spacer(1, 6*mm))
+            if seg_w > 12:
+                d2.add(String(x + run_w + seg_w/2, y + row_h/2, str(val),
+                              fontName='Helvetica-Bold', fontSize=7,
+                              textAnchor='middle', fillColor=colors.white))
+            run_w += seg_w
+
+    # Legende rechts in den Zusatzbereich
+    legend_x = usable_width2 + 5*mm
+    legend_y = total_h - 8*mm
+    box_h    = 4.5*mm
+    for j, emp in enumerate(emp_sorted):
+        yy = legend_y - j*(box_h + 2*mm)
+        d2.add(Rect(legend_x, yy, box_h, box_h,
+                    fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
+        d2.add(String(legend_x + box_h + 2*mm, yy + box_h/2,
+                      emp, fontName='Helvetica', fontSize=7, textAnchor='start'))
+
+    elems.append(d2)
+    elems.append(Spacer(1, 6*mm))
 
 
     # ---- Footer ----
