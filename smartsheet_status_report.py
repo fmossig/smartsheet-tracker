@@ -249,7 +249,7 @@ from reportlab.lib.units import mm
 def build_country_rank_tables(stats,
                               width_total,
                               gap_between_tables=12*mm,
-                              shift_right=6*mm
+                              shift_right=6*mm,
                               banner_shrink=0.8,
                               banner_height=9*mm):
     """
