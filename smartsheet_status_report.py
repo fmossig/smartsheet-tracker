@@ -97,7 +97,7 @@ def make_report():
     groups = list(GROUP_COLORS.keys())
     values = read_snapshot_counts(date_str)
 
-    elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe (letzte 30 Tage)", styles['ChartTitle']))
+    elems.append(Paragraph("NA - Produktgruppen Daten (30 Tage)", styles['ChartTitle']))
     elems.append(Spacer(1, 6*mm))
 
     usable_width = A4[0] - 2*20*mm
@@ -131,7 +131,7 @@ def make_report():
     emp_sorted = [e for e in EMP_COLORS if any(counts[p][e] for p in phases_sorted)]
 
     # 1) Titel-Banner (volle Breite, NA-Farbe)
-    banner_h = 14*mm
+    banner_h = 12*mm
     banner_w = A4[0] - (doc.leftMargin + doc.rightMargin)
     banner = Drawing(banner_w, banner_h)
     banner.add(Rect(0, 0, banner_w, banner_h,
