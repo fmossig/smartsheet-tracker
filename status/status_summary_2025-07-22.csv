@@ -1,11 +1,16 @@
 Metrik,0-30 Tage,31-60 Tage,61-90 Tage,>90 Tage
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 Anzahl Phase‑Events,4203,1514,1722,
 Distinct Rows mit jüngster Phase,2829,953,1084,398
 =======
 Anzahl Phase‑Events,4207,1510,1722,
 Distinct Rows mit jüngster Phase,2831,951,1084,398
+>>>>>>> Stashed changes
+=======
+Anzahl Phase‑Events,4208,1510,1722,
+Distinct Rows mit jüngster Phase,2832,950,1084,398
 >>>>>>> Stashed changes
 =======
 Anzahl Phase‑Events,4208,1510,1722,
