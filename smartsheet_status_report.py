@@ -249,7 +249,7 @@ def make_report():
 
     # Pies unter Balken
     elems.append(Spacer(1, 0*mm))
-    elems.append(Paragraph("Phasenverteilung je Produktgruppe (Pie)", styles['ChartTitle']))
+    elems.append(Paragraph("Phasenverteilung je Produktgruppe (Pie)", styles['CoverInfo']))
 
     pie_diam_mm = 20  # Durchmesser
     pie_height = pie_diam_mm*mm
@@ -276,7 +276,6 @@ def make_report():
 
     # Legende für Pies (global für alle Gruppen)
     elems.append(Spacer(1, 4*mm))
-    elems.append(Paragraph("Legende Phasen (alle Gruppen)", styles['Normal']))
     legend_w = usable_width
     legend_h = 12*mm
     leg = Drawing(legend_w, legend_h)
