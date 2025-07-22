@@ -472,8 +472,8 @@ def make_report():
 
         # --- Mitarbeiter-Legende im grauen Banner (volle Breite) ---
         leg2_draw, _ = build_emp_legend_banner(
-            width=banner_w,              # = usable_width
-            emp_items=legend_items,      # ["DM","EK",...]
+            width=usable_width,
+            emp_items=legend_items,
             box_size=5*mm,
             font_sz=10,
             gap_item=14*mm,
