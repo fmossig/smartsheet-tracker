@@ -202,7 +202,7 @@ def make_report():
                               fontName='Helvetica-Bold', fontSize=20, spaceAfter=12))
     styles.add(ParagraphStyle(name='CoverInfo', parent=styles['Normal'],
                               fontName='Helvetica', fontSize=12, spaceAfter=6))
-    styles.add(ParagraphStyle(name='ChartTitle', parent=styles['Heading2'],
+    styles.add(ParagraphStyle(name='ChartTitle', parent=styles['Title'],
                               fontName='Helvetica-Bold', fontSize=14, spaceAfter=6))
 
     elems = []
@@ -221,6 +221,7 @@ def make_report():
     elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
     elems.append(Spacer(1, 4*mm))
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
+    elems.append(Spacer(1, 4*mm))
 
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
 
