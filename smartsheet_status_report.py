@@ -29,6 +29,8 @@ EMP_COLORS = {
     "LK":  "#FFDE70",
 }
 
+CODE_VERSION = "2025-07-22_17h30_banner"  # << zum Erkennen der aktuellen Version
+
 # ---------- Datenhelpers ----------
 def read_snapshot_counts(date_str):
     """Zählt alle Phase-Events pro Produktgruppe aus status_snapshot_<date>.csv."""
@@ -88,6 +90,7 @@ def make_report():
     elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
     elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['CoverInfo']))
     elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff.isoformat()}", styles['CoverInfo']))
+    elems.append(Paragraph(f"CODE_VERSION: {CODE_VERSION}", styles['CoverInfo']))
     elems.append(PageBreak())
 
     # ---- Chart 1: Produktgruppen ----
@@ -122,7 +125,7 @@ def make_report():
 
     elems.append(d1)
 
- # ---- Chart 2: Gestapelt NA ----
+    # ---- Chart 2: Gestapelt NA ----
     counts = read_na_phase_employee(date_str)
     phases_sorted = [1, 2, 3, 4, 5]
     emp_sorted = [e for e in EMP_COLORS if any(counts[p][e] for p in phases_sorted)]
@@ -138,43 +141,43 @@ def make_report():
                       "Mitarbeiterbasierte Phasenstatistik (NA, 30 Tage)",
                       fontName='Helvetica-Bold', fontSize=12,
                       textAnchor='middle', fillColor=colors.white))
+    elems.append(PageBreak())
     elems.append(banner)
     elems.append(Spacer(1, 4*mm))
 
-    # 2) Horizontale Legende (farbige Quadrate + Kürzel)
+    # 2) Horizontale Legende
     legend_h = 8*mm
     legend_w = banner_w
     leg = Drawing(legend_w, legend_h)
+
     box_size = 4*mm
-    gap_x = 6*mm   # Abstand zwischen Einträgen
     x_cursor = 0
     y_center = legend_h/2
+    gap_item = 12*mm  # Abstand von einem Eintrag zum nächsten (Textbreite grob)
 
     for emp in emp_sorted:
-        # Falls in eine neue Zeile müsste, hier wrap/zweite Zeile implementieren.
-        # Für 6 Einträge passen wir in einer Zeile.
         leg.add(Rect(x_cursor, y_center - box_size/2, box_size, box_size,
                      fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None))
         leg.add(String(x_cursor + box_size + 2*mm, y_center,
                        emp, fontName='Helvetica', fontSize=8,
                        textAnchor='start'))
-        x_cursor += box_size + 2*mm + 12*mm  # Eintragbreite
+        x_cursor += box_size + 2*mm + gap_item
 
     elems.append(leg)
     elems.append(Spacer(1, 6*mm))
 
-    # 3) Chart: 25% kleiner als vorher
-    shrink = 0.75  # 75% der ursprünglichen Höhe
+    # 3) Gestapeltes Chart (25% kleiner)
+    shrink = 0.75
     chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.70
     left_ax   = 20*mm
     row_h     = 8*mm * shrink
     gap_y     = 4*mm * shrink
     origin_y2 = 10*mm
 
-    # Höhe berechnen, ggf. skalieren falls zu hoch
+    # Höhe berechnen
     rows_drawn = sum(1 for p in phases_sorted if sum(counts[p][e] for e in emp_sorted) > 0)
     total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
-    max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm  # Sicherheitsabzug
+    max_h   = A4[1] - doc.topMargin - doc.bottomMargin - 40*mm
     if total_h > max_h:
         scale = max_h / total_h
         row_h     *= scale
@@ -184,7 +187,7 @@ def make_report():
 
     d2 = Drawing(chart_w, total_h)
 
-    # Zeichnen (pro Phase skaliert)
+    # Zeichnen
     y_index = 0
     for phase in phases_sorted:
         phase_total = sum(counts[phase][e] for e in emp_sorted)
@@ -204,7 +207,7 @@ def make_report():
             v = counts[phase][emp]
             if v == 0:
                 continue
-            seg_w = max((v / phase_total) * avail_w, 2)
+            seg_w = max((v / phase_total) * avail_w, 2)  # Mindestbreite
             rect = Rect(x + run_w, y, seg_w, row_h,
                         fillColor=colors.HexColor(EMP_COLORS[emp]), strokeColor=None)
             d2.add(rect)
@@ -217,7 +220,7 @@ def make_report():
 
     elems.append(d2)
     elems.append(Spacer(1, 6*mm))
-    
+
     # ---- Footer ----
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
