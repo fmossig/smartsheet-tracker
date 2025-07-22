@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0   # wichtig, sonst kann reset/rebase fehlschlagen
+          fetch-depth: 0   # für reset/rebase nötig
 
       - name: Set up Python 3.x
         uses: actions/setup-python@v4
@@ -28,12 +28,12 @@ jobs:
           pip install --upgrade pip
           pip install smartsheet-python-sdk python-dotenv reportlab
 
-      # Optionaler Cleanup: nur einmal laufen lassen, dann auskommentieren
-      # - name: Clean old generated files
-      #   run: |
-      #     git rm -f status/status_report_*.pdf status/status_snapshot_*.csv status/status_summary_*.csv || true
-      #     git commit -m "cleanup old outputs" || true
-      #     git push || true
+      # Optional: einmalige Bereinigung alter Outputs
+      - name: Clean old generated files
+        run: |
+          git rm -f status/status_report_*.pdf status/status_snapshot_*.csv status/status_summary_*.csv || true
+          git commit -m "cleanup old outputs" || true
+          git push || true
 
       - name: Create 30-day snapshot & summary
         run: python smartsheet_status_snapshot.py
@@ -42,7 +42,7 @@ jobs:
         run: python smartsheet_status_report.py
 
       - name: Upload artifacts (debug / Kontrolle)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: status-outputs
           path: |
@@ -55,7 +55,6 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
 
-          # Frischen Stand holen und streng angleichen
           git fetch origin
           git reset --hard origin/main
 
