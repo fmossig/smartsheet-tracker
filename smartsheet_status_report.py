@@ -247,10 +247,6 @@ def make_report():
 
     elems.append(d1)
 
-    # Pies unter Balken
-    elems.append(Spacer(1, 0*mm))
-    elems.append(Paragraph("Phasenverteilung je Produktgruppe (Pie)", styles['CoverInfo']))
-
     pie_diam_mm = 20  # Durchmesser
     pie_height = pie_diam_mm*mm
     pies_y = pie_height  # Höhe des Drawings
