@@ -226,7 +226,7 @@ def make_report():
         banner = Drawing(banner_w, banner_h)
         banner.add(Rect(0, 0, banner_w, banner_h,
                         fillColor=colors.HexColor(GROUP_COLORS[grp]), strokeColor=None))
-        banner.add(String(banner_w/2, banner_h/2 + 2*mm,
+        banner.add(String(banner_w/2, banner_h/2 - 2*mm,
                           f"Produktgruppe ({grp}, Daten für 30 Tage)",
                           fontName='Helvetica-Bold', fontSize=18,
                           textAnchor='middle', fillColor=colors.white))
