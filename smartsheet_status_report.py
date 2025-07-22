@@ -242,32 +242,50 @@ def fmt_days(d):
     return f"~{int(round(d))}d"
 
 # ---- Build two ranking tables (side by side) ----
-def build_country_rank_tables(stats, width_total, gap=12*mm):
+# ---- Build two ranking tables (side by side) ----
+def build_country_rank_tables(
+        stats,
+        width_total,
+        gap=12*mm,                 # horizontaler Abstand zwischen den beiden Blöcken
+        block_spacer_h=2*mm,       # vertikaler Abstand Banner -> Tabelle
+        banner_h=9*mm,             # Höhe der Banner
+        base_fs=8,                 # Grundschriftgröße
+        inc_first=2, inc_second=1, # +px für Platz 1 / 2
+        fs_4=None, fs_5=None       # optional eigene Größen für Platz 4 & 5
+    ):
     """
     Erzeugt zwei Ranglisten (Top 5) nebeneinander:
       links:  'Am längsten ausstehende Überprüfung' (dunkelrot)
       rechts: 'Aktivste Länder' (grün)
+
     • Banner getrennt (nicht verbunden)
     • Tabellen ohne jegliche Rahmen/Linien
     • Tabellen mittig unter ihrem Banner
+    • Top 1/2/3 fett + größer; Platz 4/5 konfigurierbar
     """
-    # Top-Listen berechnen
+
+    # Defaults für 4/5, falls nicht gesetzt
+    if fs_4 is None: fs_4 = base_fs
+    if fs_5 is None: fs_5 = base_fs
+
+    # ---- Top-Listen berechnen ----
     longest = sorted(stats, key=lambda x: x["avg"], reverse=True)[:5]
     active  = sorted(stats, key=lambda x: x["avg"])[:5]
 
     def rows(lst):
         out = []
-        for i, item in enumerate(lst, start=1):
-            out.append([i, item["land"], f"~{int(round(item['avg']))}d"])
+        for pos, item in enumerate(lst, start=1):
+            out.append([pos, item["land"], f"~{int(round(item['avg']))}d"])
         return out
 
     left_rows  = rows(longest)
     right_rows = rows(active)
 
-    # --- Banner-Builder ---
-    def make_banner(txt, hexcolor, w, h=9*mm):
+    # ---- Banner-Builder ----
+    def make_banner(txt, hexcolor, w, h=banner_h):
         d = Drawing(w, h)
         d.add(Rect(0, 0, w, h, fillColor=colors.HexColor(hexcolor), strokeColor=None))
+        # Text leicht nach unten versetzen, damit optisch mittig
         d.add(String(w/2, h/2 - 1.5*mm, txt,
                      fontName="Helvetica-Bold", fontSize=10,
                      textAnchor="middle", fillColor=colors.white))
@@ -275,67 +293,82 @@ def build_country_rank_tables(stats, width_total, gap=12*mm):
 
     col_w = (width_total - gap) / 2.0
 
-    left_banner, bh = make_banner("Am längsten ausstehende Überprüfung", "#8B0000", col_w)
-    right_banner, _ = make_banner("Aktivste Länder", "#2E8B57", col_w)
+    left_banner,  _ = make_banner("Am längsten ausstehende Überprüfung", "#8B0000", col_w)
+    right_banner, _ = make_banner("Aktivste Länder",                      "#2E8B57", col_w)
 
-    # Tabellen bauen (ohne Rahmen)
+    # ---- Tabellen bauen (ohne Rahmen) ----
     header = ["#", "Land", "Ø Alter"]
-    base_fs   = 8
-    second_fs = base_fs + 1
-    first_fs  = base_fs + 2
 
     left_tbl  = Table([header] + left_rows,  colWidths=[8*mm, 28*mm, 22*mm])
     right_tbl = Table([header] + right_rows, colWidths=[8*mm, 28*mm, 22*mm])
 
-    # Kein Grid / Box, nur Ausrichtung + Header-Farbe optional
+    # Basisstil (kein Grid)
     base_style = [
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE", (0,0), (-1,0), base_fs),
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#EEEEEE")),
         ("ALIGN", (0,0), (-1,0), "CENTER"),
-        ("ALIGN", (0,1), (0,-1), "CENTER"),
-        ("ALIGN", (2,1), (2,-1), "CENTER"),
+        ("ALIGN", (0,1), (0,-1), "CENTER"),   # Rangnummern
+        ("ALIGN", (2,1), (2,-1), "CENTER"),   # Werte
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        # Rahmen & Linien explizit weg
+
         ("BOX", (0,0), (-1,-1), 0, colors.white),
         ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
-        ("LEFTPADDING", (0,0), (-1,-1), 2),
-        ("RIGHTPADDING",(0,0), (-1,-1), 2),
-        ("TOPPADDING",  (0,0), (-1,-1), 2),
+
+        ("LEFTPADDING",  (0,0), (-1,-1), 2),
+        ("RIGHTPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING",   (0,0), (-1,-1), 2),
         ("BOTTOMPADDING",(0,0), (-1,-1), 2),
     ]
     left_tbl.setStyle(TableStyle(base_style))
     right_tbl.setStyle(TableStyle(base_style))
 
-    # Top 1/2/3 hervorheben
+    # ---- Top 1/2/3/4/5 hervorheben ----
+    first_fs  = base_fs + inc_first
+    second_fs = base_fs + inc_second
+    third_fs  = base_fs  # kann man auch +0 lassen
+
     def style_ranks(tbl):
-        # Reihen: 0 = Header, 1..5 = Daten
+        # Zeile 0 = Header; 1..5 = Daten
+        # Platz 1
         if len(tbl._cellvalues) > 1:
             tbl.setStyle(TableStyle([
                 ("FONTNAME", (0,1), (-1,1), "Helvetica-Bold"),
                 ("FONTSIZE", (0,1), (-1,1), first_fs),
             ]))
+        # Platz 2
         if len(tbl._cellvalues) > 2:
             tbl.setStyle(TableStyle([
                 ("FONTNAME", (0,2), (-1,2), "Helvetica-Bold"),
                 ("FONTSIZE", (0,2), (-1,2), second_fs),
             ]))
+        # Platz 3
         if len(tbl._cellvalues) > 3:
             tbl.setStyle(TableStyle([
                 ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
-                ("FONTSIZE", (0,3), (-1,3), base_fs),
+                ("FONTSIZE", (0,3), (-1,3), third_fs),
+            ]))
+        # Platz 4
+        if len(tbl._cellvalues) > 4:
+            tbl.setStyle(TableStyle([
+                ("FONTSIZE", (0,4), (-1,4), fs_4),
+            ]))
+        # Platz 5
+        if len(tbl._cellvalues) > 5:
+            tbl.setStyle(TableStyle([
+                ("FONTSIZE", (0,5), (-1,5), fs_5),
             ]))
 
     style_ranks(left_tbl)
     style_ranks(right_tbl)
 
-    # Tabellen mittig unter Banner: Table.hAlign = 'CENTER'
-    left_tbl.hAlign = "CENTER"
+    # Tabellen unter ihrem Banner mittig
+    left_tbl.hAlign  = "CENTER"
     right_tbl.hAlign = "CENTER"
 
-    # Blöcke zusammenbauen (Banner + kleiner Spacer + Tabelle)
-    block_spacer = Spacer(1, 2*mm)
-    left_block  = [left_banner, block_spacer, left_tbl]
+    block_spacer = Spacer(1, block_spacer_h)
+
+    left_block  = [left_banner,  block_spacer, left_tbl]
     right_block = [right_banner, block_spacer, right_tbl]
 
     outer = Table([[left_block, right_block]],
@@ -343,17 +376,15 @@ def build_country_rank_tables(stats, width_total, gap=12*mm):
                   hAlign="CENTER",
                   style=TableStyle([
                       ("VALIGN", (0,0), (-1,-1), "TOP"),
-                      ("LEFTPADDING", (0,0), (-1,-1), 0),
-                      ("RIGHTPADDING",(0,0), (-1,-1), 0),
-                      ("TOPPADDING",  (0,0), (-1,-1), 0),
+                      ("LEFTPADDING",  (0,0), (-1,-1), 0),
+                      ("RIGHTPADDING", (0,0), (-1,-1), 0),
+                      ("TOPPADDING",   (0,0), (-1,-1), 0),
                       ("BOTTOMPADDING",(0,0), (-1,-1), 0),
-                      # keine Linien am Outer:
                       ("BOX", (0,0), (-1,-1), 0, colors.white),
                       ("INNERGRID", (0,0), (-1,-1), 0, colors.white),
                   ]))
 
     return [outer]
-
 
 # ---- Optional: header builder (already there) ----
 def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
@@ -639,7 +670,7 @@ def make_report():
 
         elems.append(d2)
 
-        # KPI-Boxen
+        # ---------------- KPI-Boxen ----------------
         artikel, mp, bearbeitet, pct = calc_metrics_for_group(client, grp, cutoff)
         elems.append(Spacer(1, 3*mm))
 
@@ -656,10 +687,10 @@ def make_report():
             ("% bearbeitet",         f"{pct:.1f}%"),
         ]
 
-        usable_full = usable_width
-        n = len(kpis)
+        usable_full   = usable_width
+        n             = len(kpis)
         total_spacing = spacing * (n - 1)
-        box_w = (usable_full * 0.88 - total_spacing) / n
+        box_w         = (usable_full * 0.88 - total_spacing) / n
         if box_w < 30*mm:
             box_w = 30*mm
         total_w = n * box_w + total_spacing
@@ -668,12 +699,15 @@ def make_report():
         kpi_draw = Drawing(usable_full, box_h)
         for i, (label, value) in enumerate(kpis):
             x = start_x + i * (box_w + spacing)
+            # Box
             kpi_draw.add(Rect(x, 0, box_w, box_h,
                               fillColor=red, strokeColor=None))
+            # Wert
             kpi_draw.add(String(x + box_w/2, box_h * 0.62,
                                 str(value),
                                 fontName='Helvetica-Bold', fontSize=font_val,
                                 textAnchor='middle', fillColor=colors.white))
+            # Label
             kpi_draw.add(String(x + box_w/2, box_h * 0.28,
                                 label,
                                 fontName='Helvetica-Bold', fontSize=font_lab,
@@ -682,15 +716,16 @@ def make_report():
         elems.append(kpi_draw)
         elems.append(Spacer(1, 6*mm))
 
-        # ---- NEW: Country Rank Tables (side by side) ----
+        # ---------------- NEW: Länder-Ranglisten ----------------
+        # stats: Liste von Dicts: {"land": <str>, "avg": <float Tage>}
         stats = country_age_stats_for_group(client, grp, today)
         if stats:
             elems.append(Spacer(1, 6*mm))
-            tables = build_country_rank_tables(stats, usable_full)
+            tables = build_country_rank_tables(stats, width_total=usable_full, gap=8*mm)
             elems.extend(tables)
             elems.append(Spacer(1, 6*mm))
 
-    # Footer
+    # --------------- Footer & Build ---------------
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
     doc.build(elems)
