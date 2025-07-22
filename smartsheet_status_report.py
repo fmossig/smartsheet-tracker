@@ -66,19 +66,23 @@ SHEET_IDS = {
 }
 
 # ---------- Helpers ----------
-def read_snapshot_counts(date_str):
+def read_snapshot_counts(date_str: str):
+    """Zählt alle Phase-Events pro Produktgruppe aus status_snapshot_<date>.csv."""
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = {g: 0 for g in GROUP_COLORS}
     with open(snap, encoding="utf-8") as f:
         r = csv.reader(f)
-        next(r)
+        next(r, None)  # Header
         for row in r:
             grp = row[0]
             if grp in counts:
                 counts[grp] += 1
+    # gleiche Reihenfolge wie GROUP_COLORS
     return [counts[g] for g in GROUP_COLORS]
 
-def phase_distribution_for_group(date_str, group_code):
+
+def phase_distribution_for_group(date_str: str, group_code: str):
+    """Liefert dict {1..5: count} für Phasen in der Produktgruppe (30 Tage Snapshot)."""
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = {p: 0 for p in range(1, 6)}
     with open(snap, encoding="utf-8") as f:
@@ -90,7 +94,12 @@ def phase_distribution_for_group(date_str, group_code):
                     counts[p] += 1
     return counts
 
-def read_phase_employee_by_group(date_str, group_code):
+
+def read_phase_employee_by_group(date_str: str, group_code: str):
+    """
+    dict: phase -> {emp: count} für die angegebene Produktgruppe,
+    basierend auf der Snapshot-CSV.
+    """
     snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
     counts = defaultdict(lambda: defaultdict(int))
     with open(snap, encoding="utf-8") as f:
@@ -104,30 +113,33 @@ def read_phase_employee_by_group(date_str, group_code):
                 counts[phase][emp] += 1
     return counts
 
-def build_phase_pie(dist_dict, diam_mm):
+
+def build_phase_pie(dist_dict: dict, diam_mm: float):
+    """
+    Erstellt ein Pie-Drawing mit weißen Rändern und PHASE_COLORS.
+    Labels werden nicht im Pie gezeigt (Legende separat).
+    """
     from reportlab.graphics.charts.piecharts import Pie
     from reportlab.graphics.shapes import Drawing
-    from reportlab.lib import colors
     from reportlab.lib.units import mm
 
-    phases = [1,2,3,4,5]
+    phases = [1, 2, 3, 4, 5]
     data   = [dist_dict.get(p, 0) for p in phases]
 
-    d = Drawing(diam_mm*mm, diam_mm*mm)
+    d = Drawing(diam_mm * mm, diam_mm * mm)
     pie = Pie()
-    pie.width  = pie.height = diam_mm*mm
+    pie.width = pie.height = diam_mm * mm
     pie.x = pie.y = 0
 
-    pie.data   = data
-    pie.labels = []                # <- Labels aus, wir nutzen die Legende
-    pie.sideLabels  = 0
-    pie.simpleLabels = 1
+    pie.data    = data
+    pie.labels  = []          # wir nutzen externe Legende
+    pie.simpleLabels = 1      # keine Verbindungslinien
 
     # Weiße Ränder
     pie.slices.strokeColor = colors.white
     pie.slices.strokeWidth = 0.6
 
-    # Farben der Slices (optional, falls du PHASE_COLORS verwenden willst)
+    # Farben setzen
     for i, p in enumerate(phases):
         pie.slices[i].fillColor = colors.HexColor(PHASE_COLORS[p])
 
@@ -135,7 +147,11 @@ def build_phase_pie(dist_dict, diam_mm):
     return d
 
 
-def calc_metrics_for_group(client, group_code, cutoff_date):
+def calc_metrics_for_group(client, group_code: str, cutoff_date):
+    """
+    Berechnet KPIs für eine Produktgruppe direkt aus dem Smartsheet.
+    Rückgabe: (artikel_count, mp_count, bearbeitet, pct)
+    """
     sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
     col_map = {c.title: c.id for c in sheet.columns}
 
@@ -144,9 +160,12 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
     touched_rows = set()
 
     for row in sheet.rows:
-        artikel_val = link_val = amazon_val = ""
-        has_recent = False
+        artikel_val = ""
+        link_val    = ""
+        amazon_val  = ""
+        has_recent  = False
 
+        # Basisfelder
         for cell in row.cells:
             if cell.column_id == col_map.get(COL_ARTIKEL):
                 artikel_val = (cell.display_value or "").strip()
@@ -155,6 +174,7 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
             elif cell.column_id == col_map.get(COL_AMAZON):
                 amazon_val = (cell.display_value or "").strip()
 
+        # Phasen-Datumsprüfung
         for col_name in PHASE_DATE_COLS:
             cid = col_map.get(col_name)
             if not cid:
@@ -168,6 +188,7 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
                 except Exception:
                     pass
 
+        # Zählen
         if artikel_val and not link_val:
             artikel_count += 1
         if artikel_val and link_val and amazon_val:
@@ -179,18 +200,15 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
     pct = (bearbeitet / mp_count * 100) if mp_count else 0.0
     return artikel_count, mp_count, bearbeitet, pct
 
-from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.lib.units import mm
-from reportlab.graphics.shapes import Drawing, Rect, String
-from reportlab.lib import colors
 
-def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
+# ------- Misch-UI-Helper (Header / Legenden) -------
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
+def build_group_header(grp_code: str, grp_color_hex: str, period_text="Zeitraum: 30 Tage"):
     """
     Titelblock:
       [roter Chip mit GRP]   [Daten & Kennzahlen / Zeitraum: 30 Tage]
-    Das GRP-Label ist leicht höher gesetzt, der Textblock etwas nach links gezogen.
     """
-    # --- Layout-Parameter ---
     chip_font   = 'Helvetica-Bold'
     chip_fs     = 18
     chip_pad_x  = 4*mm
@@ -203,16 +221,14 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     gap_between = 6*mm
 
-    # Feinanpassungen
-    CHIP_TEXT_UP = 1*mm     # „NA“ minimal höher
-    TEXT_LEFT    = 2*mm     # beide Zeilen etwas nach links
+    CHIP_TEXT_UP = 1*mm   # „NA“ minimal höher
+    TEXT_LEFT    = 2*mm   # Textblock leicht nach links
 
-    # --- Chip-Größe berechnen ---
+    # Chip-Größe
     chip_text_w = stringWidth(grp_code, chip_font, chip_fs)
     chip_w = chip_text_w + 2*chip_pad_x
-    chip_h = chip_fs*1.2 + 2*chip_pad_y
+    chip_h = chip_fs * 1.2 + 2*chip_pad_y
 
-    # Textblock Breite (nur informativ)
     line1_w = stringWidth("Daten & Kennzahlen", line1_font, line1_fs)
     line2_w = stringWidth(period_text,          line2_font, line2_fs)
     text_block_w = max(line1_w, line2_w)
@@ -222,7 +238,7 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     d = Drawing(total_w, total_h)
 
-    # --- Chip ---
+    # Chip
     d.add(Rect(0, 0, chip_w, chip_h,
                fillColor=colors.HexColor(grp_color_hex),
                strokeColor=None))
@@ -232,12 +248,11 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
                  fontName=chip_font, fontSize=chip_fs,
                  fillColor=colors.white, textAnchor='start'))
 
-    # --- Textblock ---
+    # Textblock
     text_x = chip_w + gap_between - TEXT_LEFT
-    center_y = total_h/2.0
-
-    line1_y = center_y + line1_fs*0.35
-    line2_y = center_y - line2_fs*1.1
+    center_y = total_h / 2.0
+    line1_y = center_y + line1_fs * 0.35
+    line2_y = center_y - line2_fs * 1.1
 
     d.add(String(text_x, line1_y,
                  "Daten & Kennzahlen",
@@ -251,6 +266,47 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
     return d, total_h
 
 
+def build_emp_legend_banner(
+    width,
+    emp_items,
+    box_size=5*mm,
+    font_sz=10,
+    gap_item=14*mm,
+    banner_color="#F2F2F2"
+):
+    """
+    Graues Banner (volle Breite) mit zentrierter Mitarbeiter-Legende.
+    Rückgabe: (Drawing, height_mm)
+    """
+    banner_h = 14*mm
+    d = Drawing(width, banner_h)
+
+    d.add(Rect(0, 0, width, banner_h,
+               fillColor=colors.HexColor(banner_color),
+               strokeColor=None))
+
+    y_center = banner_h / 2.0
+    text_y   = y_center - (font_sz * 0.35)
+
+    item_w   = box_size + 2*mm + gap_item
+    total_w  = len(emp_items) * item_w - gap_item
+    x_cursor = (width - total_w) / 2.0
+
+    for emp in emp_items:
+        d.add(Rect(x_cursor,
+                   y_center - box_size/2,
+                   box_size, box_size,
+                   fillColor=colors.HexColor(EMP_COLORS[emp]),
+                   strokeColor=None))
+        d.add(String(x_cursor + box_size + 2*mm,
+                     text_y,
+                     emp,
+                     fontName='Helvetica',
+                     fontSize=font_sz,
+                     textAnchor='start'))
+        x_cursor += item_w
+
+    return d, banner_h
 
 # ---------- Report ----------
 def make_report():
