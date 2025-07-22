@@ -147,38 +147,39 @@ def make_report():
 
     # 2) Horizontale Legende
     legend_h  = 10*mm          # Gesamthöhe der Legendenzeile
-    box_size  = 5*mm           # Quadrate etwas größer
-    font_sz   = 10             # Textgröße
-    gap_item  = 14*mm          # Abstand zwischen Einträgen (anpassen nach Bedarf)
+    box_size  = 5*mm           # Größe der Quadrate
+    font_sz   = 10             # Schriftgröße
+    gap_item  = 14*mm          # horizontaler Abstand zwischen Einträgen
 
     legend_w  = banner_w
     leg = Drawing(legend_w, legend_h)
 
-    y_center = legend_h / 2    # Mitte der Zeile
+    y_center = legend_h / 2
+    # Textbaseline sitzt etwas unter der Mitte -> optisch korrigieren:
+    text_y = y_center - (font_sz * 0.35)  # Feinjustierung fürs Auge
 
     x_cursor = 0
     for emp in emp_sorted:
-        # Box
+        # Box vertikal mittig
         leg.add(Rect(x_cursor,
-                     y_center - box_size/2,   # vertikal mittig ausrichten
+                     y_center - box_size/2,
                      box_size, box_size,
                      fillColor=colors.HexColor(EMP_COLORS[emp]),
                      strokeColor=None))
-        # Text (Baseline mittig -> textAnchor='start' + y_center nutzen)
+        # Text daneben, ebenfalls optisch mittig
         leg.add(String(x_cursor + box_size + 2*mm,
-                       y_center,
+                       text_y,
                        emp,
                        fontName='Helvetica',
                        fontSize=font_sz,
                        textAnchor='start'))
-        # Cursor verschieben (Box + Textbreite grob)
         x_cursor += box_size + 2*mm + gap_item
 
     elems.append(leg)
     elems.append(Spacer(1, 6*mm))
 
 
-    # 3) Gestapeltes Chart (25% kleiner)
+    # 3) Gestapeltes Chart (5% kleiner)
     shrink = 0.75
     chart_w   = (A4[0] - doc.leftMargin - doc.rightMargin) * 0.95
     left_ax   = 20*mm
