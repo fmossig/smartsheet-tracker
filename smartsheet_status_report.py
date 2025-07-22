@@ -103,6 +103,11 @@ def read_phase_employee_by_group(date_str, group_code):
     return counts
 
 def build_phase_pie(dist_dict, diam_mm):
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+
     phases = [1,2,3,4,5]
     data   = [dist_dict.get(p, 0) for p in phases]
 
@@ -110,23 +115,23 @@ def build_phase_pie(dist_dict, diam_mm):
     pie = Pie()
     pie.width  = pie.height = diam_mm*mm
     pie.x = pie.y = 0
-    pie.data  = data
-    pie.sideLabels  = 0              # keine seitlichen Labels
-    pie.simpleLabels = 1             # Standard-Placement
-    pie.labelRadius = pie.width/2 - 1*mm   # etwas nach innen
-    pie.slices[i].popout = 0         # sicherheitshalber
-    pie.slices[i].labelRadius = pie.labelRadius
 
-    pie.labels = []
+    pie.data   = data
+    pie.labels = []                # <- Labels aus, wir nutzen die Legende
+    pie.sideLabels  = 0
+    pie.simpleLabels = 1
 
-    # Farben & weiße Ränder
+    # Weiße Ränder
+    pie.slices.strokeColor = colors.white
+    pie.slices.strokeWidth = 0.6
+
+    # Farben der Slices (optional, falls du PHASE_COLORS verwenden willst)
     for i, p in enumerate(phases):
-        pie.slices[i].fillColor   = colors.HexColor(PHASE_COLORS[p])
-        pie.slices[i].strokeColor = colors.white
-        pie.slices[i].strokeWidth = 0.6
+        pie.slices[i].fillColor = colors.HexColor(PHASE_COLORS[p])
 
     d.add(pie)
     return d
+
 
 def calc_metrics_for_group(client, group_code, cutoff_date):
     sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
