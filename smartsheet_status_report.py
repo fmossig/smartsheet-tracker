@@ -102,7 +102,7 @@ def make_report():
 
     usable_width = A4[0] - 2*20*mm
     chart_height = 60*mm
-    origin_y = 15*mm
+    origin_y = 25*mm
 
     total_gap = usable_width * 0.1
     gap = total_gap / (len(groups) + 1)
