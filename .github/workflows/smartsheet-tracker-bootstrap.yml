@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: 'Vergangenheit in Tagen'
+        description: 'Vergangenheit in Tagen (leer oder 0 = kein Cutoff)'
         required: false
         default: '90'
 
@@ -14,25 +14,41 @@ permissions:
 jobs:
   seed:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
+          cache: 'pip'
 
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Seed from Smartsheet log
+      - name: Bootstrap tracker CSVs
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
-          python smartsheet_date_change_tracker.py --bootstrap --days ${{ github.event.inputs.days }}
+          mkdir -p tracker_logs
+          # Argument-Handling: kein/0 -> ohne Cutoff
+          if [ -z "${{ github.event.inputs.days }}" ] || [ "${{ github.event.inputs.days }}" = "0" ]; then
+            EXTRA_ARGS="--no-cutoff"
+          else
+            EXTRA_ARGS="--days ${{ github.event.inputs.days }}"
+          fi
+          python smartsheet_date_change_tracker.py --bootstrap $EXTRA_ARGS
 
       - name: Commit seeded CSV & backup
         run: |
-          git config user.name "github-actions"
+          git config user.name  "github-actions"
           git config user.email "actions@github.com"
-          git add -f date_changes_log_*.csv date_backup.csv
-          git commit -m "Bootstrap change logs" || echo "No changes"
-          git push
+
+          # Nur committen, wenn es etwas gibt
+          git add -f tracker_logs/*.csv 2>/dev/null || true
+          git add -f tracker_logs/date_backup.csv 2>/dev/null || true
+
+          git diff --cached --quiet && echo "No changes" || git commit -m "Bootstrap change logs"
+          git push || echo "No push needed"
