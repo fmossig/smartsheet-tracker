@@ -1,4 +1,4 @@
-import os, csv
+import os, csv, glob
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import statistics
@@ -10,21 +10,18 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.platypus import Table, TableStyle, Spacer
-from reportlab.graphics.shapes import Drawing, Rect, String
-from reportlab.lib import colors
-from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-
-# Pie
 from reportlab.graphics.charts.piecharts import Pie
 
 # Smartsheet
 import smartsheet
 from dotenv import load_dotenv
+
+# ---------- Pfade ----------
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+LOG_DIR    = os.path.join(BASE_DIR, "tracker_logs")  # Tracker-CSV Ordner
 
 # ---------- Farben ----------
 GROUP_COLORS = {
@@ -54,9 +51,9 @@ EMP_COLORS = {
     "LK":  "#FFDE70",
 }
 
-CODE_VERSION = "2025-07-23_lists"
+CODE_VERSION = "2025-07-23_tracker"
 
-# ---------- Spalten ----------
+# ---------- Smartsheet Spalten ----------
 COL_ARTIKEL = "Artikel"
 COL_LINK    = "Link"
 COL_AMAZON  = "Amazon"
@@ -73,7 +70,7 @@ SHEET_IDS = {
     "NM": 4275419734822788,
 }
 
-# ---------- Helpers ----------
+# ---------- Footer ----------
 def draw_footer(canvas, doc):
     amz_path = os.path.join(ASSETS_DIR, "amazon_logo.png")
     noc_path = os.path.join(ASSETS_DIR, "noctua_logo.png")
@@ -87,7 +84,6 @@ def draw_footer(canvas, doc):
 
     def draw_if_exists(path, x, y, h):
         if not os.path.isfile(path):
-            # einfach überspringen, damit der Build nicht crasht
             return 0
         img = ImageReader(path)
         w, h_img = img.getSize()
@@ -99,45 +95,73 @@ def draw_footer(canvas, doc):
     w_amz = draw_if_exists(amz_path, x0, y0, logo_h)
     draw_if_exists(noc_path, x0 + w_amz + gap, y0, logo_h)
 
+# ---------- Parser ----------
+def parse_date_fuzzy(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s).date()
+    except Exception:
+        pass
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            continue
+    return None
 
-def read_snapshot_counts(date_str):
-    snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
-    counts = {g: 0 for g in GROUP_COLORS}
-    with open(snap, encoding="utf-8") as f:
-        r = csv.reader(f)
-        next(r)
-        for row in r:
-            grp = row[0]
-            if grp in counts:
-                counts[grp] += 1
-    return [counts[g] for g in GROUP_COLORS]
+# ---------- Tracker-Log Loader & Aggregationen ----------
+def load_log_rows(log_dir, since_date, until_date=None):
+    rows = []
+    for path in glob.glob(os.path.join(log_dir, "date_changes_log_*.csv")):
+        with open(path, encoding="utf-8") as f:
+            r = csv.DictReader(f)
+            for row in r:
+                d = parse_date_fuzzy(row.get("Datum", ""))
+                if not d:
+                    continue
+                if d < since_date:
+                    continue
+                if until_date and d > until_date:
+                    continue
+                try:
+                    phase_no = int(row.get("Phase", "0") or 0)
+                except ValueError:
+                    phase_no = 0
+                rows.append({
+                    "ts":    row.get("Änderung am", "").strip(),
+                    "group": row.get("Produktgruppe", "").strip(),
+                    "land":  row.get("Land/Marketplace", "").strip(),
+                    "phase": phase_no,
+                    "field": row.get("Feld", "").strip(),
+                    "date":  d,
+                    "user":  row.get("Mitarbeiter", "").strip(),
+                })
+    return rows
 
-def phase_distribution_for_group(date_str, group_code):
-    snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
-    counts = {p: 0 for p in range(1, 6)}
-    with open(snap, encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            if row["Produktgruppe"] == group_code:
-                p = int(row["Phase"])
-                if p in counts:
-                    counts[p] += 1
+def aggregate_group_counts(log_rows):
+    counts = defaultdict(int)
+    for r in log_rows:
+        counts[r["group"]] += 1
     return counts
 
-def read_phase_employee_by_group(date_str, group_code):
-    snap = os.path.join("status", f"status_snapshot_{date_str}.csv")
-    counts = defaultdict(lambda: defaultdict(int))
-    with open(snap, encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            if row["Produktgruppe"] != group_code:
-                continue
-            phase = int(row["Phase"])
-            emp = (row["Mitarbeiter"] or "").strip()
-            if emp in EMP_COLORS:
-                counts[phase][emp] += 1
-    return counts
+def aggregate_phase_emp(log_rows, group_code):
+    res = defaultdict(lambda: defaultdict(int))
+    for r in log_rows:
+        if r["group"] != group_code:
+            continue
+        if r["phase"] and r["user"]:
+            res[r["phase"]][r["user"]] += 1
+    return res
 
+def aggregate_phase_dist(log_rows, group_code):
+    dist = {p: 0 for p in range(1, 6)}
+    for r in log_rows:
+        if r["group"] == group_code and r["phase"] in dist:
+            dist[r["phase"]] += 1
+    return dist
+
+# ---------- Pie ----------
 def build_phase_pie(dist_dict, diam_mm):
     phases = [1,2,3,4,5]
     data   = [dist_dict.get(p, 0) for p in phases]
@@ -146,23 +170,21 @@ def build_phase_pie(dist_dict, diam_mm):
     pie = Pie()
     pie.width  = pie.height = diam_mm*mm
     pie.x = pie.y = 0
-
     pie.data   = data
-    pie.labels = []                # keine Labels direkt am Pie
+    pie.labels = []
     pie.sideLabels  = 0
     pie.simpleLabels = 1
 
-    # Ränder weiß
     pie.slices.strokeColor = colors.white
     pie.slices.strokeWidth = 0.6
 
-    # Farben
     for i, p in enumerate(phases):
         pie.slices[i].fillColor = colors.HexColor(PHASE_COLORS[p])
 
     d.add(pie)
     return d
 
+# ---------- KPIs (Smartsheet) ----------
 def calc_metrics_for_group(client, group_code, cutoff_date):
     sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
     col_map = {c.title: c.id for c in sheet.columns}
@@ -209,23 +231,17 @@ def calc_metrics_for_group(client, group_code, cutoff_date):
     pct = (bearbeitet / mp_count * 100) if mp_count else 0.0
     return artikel_count, mp_count, bearbeitet, pct
 
-# ---- NEW: Country stats (Avg days since last phase) ----
+# ---------- Länder-Statistik (Smartsheet) ----------
 def country_age_stats_for_group(client, group_code, today_date):
-    """
-    Liefert pro Land (Amazon-Spalte) Durchschnitt/Median/Max Tage seit letzter Phase.
-    """
     sheet = client.Sheets.get_sheet(SHEET_IDS[group_code])
     col_map = {c.title: c.id for c in sheet.columns}
 
-    # helper to get last phase date
-    country_days = defaultdict(list)  # land -> [tage seit letzter phase, ...]
+    country_days = defaultdict(list)
 
     for row in sheet.rows:
         artikel_val = ""
         link_val = ""
         amazon_val = ""
-
-        # Grunddaten
         for cell in row.cells:
             if cell.column_id == col_map.get(COL_ARTIKEL):
                 artikel_val = (cell.display_value or "").strip()
@@ -234,11 +250,9 @@ def country_age_stats_for_group(client, group_code, today_date):
             elif cell.column_id == col_map.get(COL_AMAZON):
                 amazon_val = (cell.display_value or "").strip()
 
-        # Nur Marktplatzartikel? (wie bei KPIs)
         if not (artikel_val and link_val and amazon_val):
             continue
 
-        # letzter Phasenzeitpunkt
         last_dt = None
         for col_name in PHASE_DATE_COLS:
             cid = col_map.get(col_name)
@@ -256,27 +270,21 @@ def country_age_stats_for_group(client, group_code, today_date):
         if last_dt:
             age_days = (today_date - last_dt).days
             country_days[amazon_val].append(age_days)
-        # Wenn kein Datum → ignorieren (oder sehr groß zählen? sag Bescheid)
 
     stats = []
     for land, lst in country_days.items():
         if not lst:
             continue
-        avg = statistics.mean(lst)
-        med = statistics.median(lst)
-        mx  = max(lst)
-        stats.append({"land": land,
-                      "avg": avg,
-                      "median": med,
-                      "max": mx,
-                      "count": len(lst)})
+        stats.append({
+            "land": land,
+            "avg": statistics.mean(lst),
+            "median": statistics.median(lst),
+            "max": max(lst),
+            "count": len(lst)
+        })
     return stats
 
-def fmt_days(d):
-    return f"~{int(round(d))}d"
-
-
-
+# ---------- Header Chip ----------
 def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage"):
     chip_font   = 'Helvetica-Bold'
     chip_fs     = 18
@@ -290,8 +298,8 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     gap_between = 6*mm
 
-    CHIP_TEXT_UP = 1*mm   # „NA“ minimal höher
-    TEXT_LEFT    = 2*mm   # Textblock leicht nach links
+    CHIP_TEXT_UP = 1*mm
+    TEXT_LEFT    = 2*mm
 
     chip_text_w = stringWidth(grp_code, chip_font, chip_fs)
     chip_w = chip_text_w + 2*chip_pad_x
@@ -306,7 +314,6 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     d = Drawing(total_w, total_h)
 
-    # roter Chip
     d.add(Rect(0, 0, chip_w, chip_h,
                fillColor=colors.HexColor(grp_color_hex),
                strokeColor=None))
@@ -316,7 +323,6 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
                  fontName=chip_font, fontSize=chip_fs,
                  fillColor=colors.white, textAnchor='start'))
 
-    # Textblock
     text_x   = chip_w + gap_between - TEXT_LEFT
     center_y = total_h/2.0
     line1_y  = center_y + line1_fs*0.35
@@ -333,22 +339,14 @@ def build_group_header(grp_code, grp_color_hex, period_text="Zeitraum: 30 Tage")
 
     return d, total_h
 
+# ---------- Länder-Rank-Tabellen ----------
 def build_country_rank_tables(stats,
                               width_total,
                               gap_between_tables=12*mm,
                               shift_right=6*mm,
                               banner_shrink=0.8,
                               banner_height=9*mm):
-    """
-    Zwei Ranglisten (Top 5) nebeneinander:
-      links:  'Inaktivste Länder' (dunkelrot)
-      rechts: 'Aktivste Länder'   (grün)
-    • Banner schmaler (banner_shrink) und zentriert
-    • Abstand der beiden Spalten: gap_between_tables
-    • Tabellen ohne Linien; Top1/2/3 größer/fett
-    • shift_right verschiebt beide Tabellen minimal nach rechts
-    """
-    # ---- Daten vorbereiten ---------------------------------------------------
+    from reportlab.platypus import Spacer, Table, TableStyle
     longest = sorted(stats, key=lambda x: x["avg"], reverse=True)[:5]
     active  = sorted(stats, key=lambda x: x["avg"])[:5]
 
@@ -361,7 +359,6 @@ def build_country_rank_tables(stats,
     left_rows  = rows(longest)
     right_rows = rows(active)
 
-    # ---- Banner Helper -------------------------------------------------------
     def make_banner(txt, hexcolor, w, h=banner_height):
         d = Drawing(w, h)
         d.add(Rect(0, 0, w, h, fillColor=colors.HexColor(hexcolor), strokeColor=None))
@@ -370,14 +367,12 @@ def build_country_rank_tables(stats,
                      textAnchor="middle", fillColor=colors.white))
         return d
 
-    # Basisbreiten
     col_w = (width_total - gap_between_tables) / 2.0
     bn_w  = col_w * banner_shrink
 
     left_banner  = make_banner("Inaktivste Länder", "#8B0000", bn_w)
     right_banner = make_banner("Aktivste Länder",   "#2E8B57", bn_w)
 
-    # zentrieren der Drawings in ihrer Spalte
     def center_draw(drawing, col_width):
         t = Table([[drawing]], colWidths=[col_width], hAlign="CENTER")
         t.setStyle(TableStyle([
@@ -394,7 +389,6 @@ def build_country_rank_tables(stats,
     left_banner_tbl  = center_draw(left_banner,  col_w)
     right_banner_tbl = center_draw(right_banner, col_w)
 
-    # Tabellen ohne Linien
     header    = ["#", "Land", "Ø Alter"]
     base_fs   = 8
     second_fs = base_fs + 1
@@ -421,7 +415,6 @@ def build_country_rank_tables(stats,
     left_tbl.setStyle(TableStyle(base_style))
     right_tbl.setStyle(TableStyle(base_style))
 
-    # Rank-Styling
     def style_ranks(tbl):
         if len(tbl._cellvalues) > 1:
             tbl.setStyle(TableStyle([
@@ -445,15 +438,13 @@ def build_country_rank_tables(stats,
     left_block  = [left_banner_tbl,  block_spacer, left_tbl]
     right_block = [right_banner_tbl, block_spacer, right_tbl]
 
-    # Outer Table mit Gap & optionalem Shift nach rechts
     outer = Table([[left_block, "", right_block]],
                   colWidths=[col_w, gap_between_tables, col_w],
                   hAlign="CENTER",
                   style=TableStyle([
                       ("VALIGN", (0,0), (-1,-1), "TOP"),
-                      ("LEFTPADDING", (0,0), (0,-1), shift_right),   # shift left col
-                      ("RIGHTPADDING",(2,0), (2,-1), 0),
-                      ("LEFTPADDING", (2,0), (2,-1), shift_right),   # shift right col
+                      ("LEFTPADDING", (0,0), (0,-1), shift_right),
+                      ("LEFTPADDING", (2,0), (2,-1), shift_right),
                       ("TOPPADDING",  (0,0), (-1,-1), 0),
                       ("BOTTOMPADDING",(0,0), (-1,-1), 0),
                       ("BOX", (0,0), (-1,-1), 0, colors.white),
@@ -472,6 +463,9 @@ def make_report():
     today = now.date()
     date_str = today.isoformat()
     cutoff = today - timedelta(days=30)
+
+    # --- Tracker-Logs laden (30 Tage) ---
+    log_rows = load_log_rows(LOG_DIR, since_date=cutoff, until_date=today)
 
     pdf_file = os.path.join("status", f"status_report_{date_str}.pdf")
 
@@ -492,22 +486,24 @@ def make_report():
 
     elems = []
 
-    # Deckblatt
+    # ---- Deckblatt ----
     elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
     elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['CoverInfo']))
     elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff.isoformat()}", styles['CoverInfo']))
     elems.append(Paragraph(f"CODE_VERSION: {CODE_VERSION}", styles['CoverInfo']))
     elems.append(PageBreak())
 
-    # ----- Seite: Produktgruppen Balken + Pies -----
+    # ----- Seite: Produktgruppen Balken + Pies (aus Tracker) -----
     groups = list(GROUP_COLORS.keys())
-    values = read_snapshot_counts(date_str)
+
+    group_counts = aggregate_group_counts(log_rows)
+    values = [group_counts.get(g, 0) for g in groups]
 
     elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
     elems.append(Spacer(1, 6*mm))
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
-    
+
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
     chart_height = 55*mm
     origin_y = 25*mm
@@ -546,11 +542,10 @@ def make_report():
                          fillColor=PIE_BANNER_COLOR, strokeColor=None))
 
     pie_w = pie_diam_mm*mm
-    pie_h = pie_diam_mm*mm
-    pie_y = (banner_h - pie_h) / 2.0
+    pie_y = (banner_h - pie_w) / 2.0
 
     for idx, grp in enumerate(groups):
-        dist = phase_distribution_for_group(date_str, grp)
+        dist = aggregate_phase_dist(log_rows, grp)
         pie_draw = build_phase_pie(dist, pie_diam_mm)
         pie_x = bar_x_centers[idx] - pie_w/2
         pie_draw.translate(pie_x, pie_y)
@@ -584,7 +579,6 @@ def make_report():
     phases_sorted = [1, 2, 3, 4, 5]
     legend_items = list(EMP_COLORS.keys())
 
-    banner_h_grp = 12*mm
     banner_w_grp = usable_width
     legend_h_emp = 10*mm
     box_size = 5*mm
@@ -601,13 +595,12 @@ def make_report():
     for grp in groups:
         elems.append(PageBreak())
 
-        # Header Chip
         hdr_draw, _ = build_group_header(grp, GROUP_COLORS[grp])
         elems.append(hdr_draw)
         elems.append(Spacer(1, 4*mm))
 
-        # Grauer Banner um Mitarbeiter-Legende
-        leg_width = banner_w_grp
+        # Grauer Banner für Emp-Legende
+        leg_width  = banner_w_grp
         leg_height = 14*mm
         leg_draw = Drawing(leg_width, leg_height)
         leg_draw.add(Rect(0,0,leg_width,leg_height,
@@ -636,8 +629,8 @@ def make_report():
         elems.append(leg_draw)
         elems.append(Spacer(1, 2*mm))
 
-        # Gestapeltes Chart
-        counts = read_phase_employee_by_group(date_str, grp)
+        # Gestapeltes Chart (Tracker-Daten)
+        counts = aggregate_phase_emp(log_rows, grp)
 
         rows_drawn = len(phases_sorted)
         total_h = rows_drawn * (row_h + gap_y) + origin_y2 + 6*mm
@@ -691,7 +684,7 @@ def make_report():
 
         elems.append(d2)
 
-        # ---------------- KPI-Boxen ----------------
+        # KPIs (Smartsheet)
         artikel, mp, bearbeitet, pct = calc_metrics_for_group(client, grp, cutoff)
         elems.append(Spacer(1, 3*mm))
 
@@ -720,15 +713,12 @@ def make_report():
         kpi_draw = Drawing(usable_full, box_h)
         for i, (label, value) in enumerate(kpis):
             x = start_x + i * (box_w + spacing)
-            # Box
             kpi_draw.add(Rect(x, 0, box_w, box_h,
                               fillColor=red, strokeColor=None))
-            # Wert
             kpi_draw.add(String(x + box_w/2, box_h * 0.62,
                                 str(value),
                                 fontName='Helvetica-Bold', fontSize=font_val,
                                 textAnchor='middle', fillColor=colors.white))
-            # Label
             kpi_draw.add(String(x + box_w/2, box_h * 0.28,
                                 label,
                                 fontName='Helvetica-Bold', fontSize=font_lab,
@@ -737,16 +727,14 @@ def make_report():
         elems.append(kpi_draw)
         elems.append(Spacer(1, 6*mm))
 
-        # ---------------- NEW: Länder-Ranglisten ----------------
-        # stats: Liste von Dicts: {"land": <str>, "avg": <float Tage>}
+        # Länder-Rankings
         stats = country_age_stats_for_group(client, grp, today)
         if stats:
             elems.append(Spacer(1, 6*mm))
             elems.extend(build_country_rank_tables(stats, usable_full))
             elems.append(Spacer(1, 6*mm))
-      # optional
 
-    # --------------- Footer & Build ---------------
+    # Footer
     elems.append(Paragraph(f"Report erstellt: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
 
     doc.build(elems, onFirstPage=draw_footer, onLaterPages=draw_footer)
