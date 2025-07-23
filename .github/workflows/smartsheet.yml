@@ -1,49 +1,72 @@
-name: Smartsheet Tracker (monatlicher Snapshot)
+name: Smartsheet Date Change Tracker
 
 on:
   schedule:
-    - cron: '0 3 1 * *'       # täglich um 00:00 UTC
-  workflow_dispatch:         # manueller Start möglich
+    - cron: '0 0 * * *'          # jeden Tag 00:00 UTC
+  workflow_dispatch:             # manueller Start
 
 permissions:
-  contents: write
+  contents: write                # für git commit/push
+
+concurrency:
+  group: date-change-tracker
+  cancel-in-progress: false
 
 jobs:
   tracker:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Retry Checkout
-        uses: devops-infra/action-retry@v1
-        with:
-          retries: 3
-          command: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Python 3.x
-        uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Smartsheet Tracker
+      - name: Run tracker
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: python smartsheet_date_change_tracker.py
 
-      - name: Commit monthly CSV snapshot
+      - name: Commit CSV snapshot(s)
         run: |
+          set -e
           MONTH_YEAR=$(date +'%m.%Y')
-          FILE="date_changes_log_${MONTH_YEAR}.csv"
+          LOG_FILE="date_changes_log_${MONTH_YEAR}.csv"
+          BACKUP_FILE="date_backup.csv"
 
-          if [ -f "$FILE" ]; then
-            echo "✅ ${FILE} gefunden – committe es."
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git add -f "$FILE"
-            git commit -m "Update log ${MONTH_YEAR}" || echo "🟡 No changes to commit"
-            git push
-          else
-            echo "⚠️ Datei ${FILE} nicht gefunden, überspringe Commit."
+          git config user.name  "github-actions"
+          git config user.email "actions@github.com"
+
+          CHANGED=0
+          if [ -f "$LOG_FILE" ]; then
+            git add -f "$LOG_FILE"
+            CHANGED=1
           fi
+          if [ -f "$BACKUP_FILE" ]; then
+            git add -f "$BACKUP_FILE"
+            CHANGED=1
+          fi
+
+          if [ $CHANGED -eq 1 ]; then
+            git commit -m "Update date change logs (${MONTH_YEAR})" || echo "No diff to commit"
+            git push || echo "Push skipped"
+          else
+            echo "No CSV files to commit."
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: date-change-logs
+          path: |
+            date_changes_log_*.csv
+            date_backup.csv
+          if-no-files-found: ignore
