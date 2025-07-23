@@ -2,26 +2,23 @@ name: Smartsheet Tracker Nightly
 
 on:
   schedule:
-    - cron: '0 0 * * *'          # täglich 00:00 UTC
+    - cron: '0 0 * * *'   # täglich 00:00 UTC
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: smartsheet-tracker-nightly
+  group: date-change-tracker
   cancel-in-progress: false
 
 jobs:
   tracker:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout (mit Retry)
-        uses: devops-infra/action-retry@v1
-        with:
-          retries: 3
-          retry_wait_seconds: 10
-          command: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,35 +32,21 @@ jobs:
       - name: Run tracker
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
-        run: python smartsheet_date_change_tracker.py
+        run: |
+          mkdir -p tracker_logs
+          python smartsheet_date_change_tracker.py
 
       - name: Commit CSV snapshot(s)
         run: |
-          set -e
-          MONTH_YEAR=$(date +'%m.%Y')
-          LOG_DIR="tracker_logs"
-          LOG_FILE="${LOG_DIR}/date_changes_log_${MONTH_YEAR}.csv"
-          BACKUP_FILE="${LOG_DIR}/date_backup.csv"
-
           git config user.name  "github-actions"
           git config user.email "actions@github.com"
 
           CHANGED=0
-          if [ -f "$LOG_FILE" ]; then
-            git add -f "$LOG_FILE"
-            CHANGED=1
-          fi
-          if [ -f "$BACKUP_FILE" ]; then
-            git add -f "$BACKUP_FILE"
-            CHANGED=1
-          fi
+          git add -f tracker_logs/*.csv 2>/dev/null || true
+          git add -f tracker_logs/date_backup.csv 2>/dev/null || true
 
-          if [ $CHANGED -eq 1 ]; then
-            git commit -m "Update date change logs (${MONTH_YEAR})" || echo "No diff to commit"
-            git push || echo "Push skipped"
-          else
-            echo "No CSV files to commit."
-          fi
+          git diff --cached --quiet && echo "No changes" || (git commit -m "Nightly update logs" && CHANGED=1)
+          if [ $CHANGED -eq 1 ]; then git push || echo "Push skipped"; fi
 
       - name: Upload artifacts
         if: always()
@@ -71,6 +54,5 @@ jobs:
         with:
           name: date-change-logs
           path: |
-            tracker_logs/date_changes_log_*.csv
-            tracker_logs/date_backup.csv
+            tracker_logs/*.csv
           if-no-files-found: ignore
