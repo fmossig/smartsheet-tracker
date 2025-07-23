@@ -537,7 +537,7 @@ def make_report():
 
     # --- Pies auf grauem Banner ---
     PIE_BANNER_COLOR = colors.HexColor("#F2F2F2")
-    PIE_BANNER_H_MM  = 32
+    PIE_BANNER_H_MM  = 25
     pie_diam_mm = 20
 
     banner_h = PIE_BANNER_H_MM * mm
