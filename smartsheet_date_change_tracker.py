@@ -1,4 +1,5 @@
 import os
+import re
 import csv
 import argparse
 from datetime import datetime, timedelta
@@ -20,11 +21,11 @@ SHEET_IDS = {
 SEED_SHEET_ID = 6879355327172484  # einmalige Bootstrap-Quelle
 
 PHASE_FIELDS = [
-    ("Kontrolle",    "K von",        1),
-    ("BE am",        "BE von",       2),
-    ("K am",         "K2 von",       3),
-    ("C am",         "C von",        4),
-    ("Reopen C2 am", "Reopen C2 von",5),
+    ("Kontrolle",    "K von",         1),
+    ("BE am",        "BE von",        2),
+    ("K am",         "K2 von",        3),
+    ("C am",         "C von",         4),
+    ("Reopen C2 am", "Reopen C2 von", 5),
 ]
 
 AMAZON_COL = "Amazon"
@@ -39,7 +40,7 @@ def month_file_from_date(d):
 BACKUP_FILE = os.path.join(LOG_DIR, "date_backup.csv")
 
 # -------------------- Writer Cache --------------------
-_writer_cache = {}  # month_file -> (file_handle, csv_writer)
+_writer_cache = {}  # path -> (file_handle, csv_writer)
 
 def get_writer_for_date(dt):
     """Return csv.writer for the month of dt, open/cached."""
@@ -49,8 +50,15 @@ def get_writer_for_date(dt):
         f = open(path, "a", newline="", encoding="utf-8")
         w = csv.writer(f)
         if write_header:
-            w.writerow(["Änderung am", "Produktgruppe", "Land/Marketplace",
-                        "Phase", "Feld", "Datum", "Mitarbeiter"])
+            w.writerow([
+                "Änderung am",
+                "Produktgruppe",
+                "Land/Marketplace",
+                "Phase",
+                "Feld",
+                "Datum",
+                "Mitarbeiter",
+            ])
         _writer_cache[path] = (f, w)
     return _writer_cache[path][1]
 
@@ -81,12 +89,11 @@ def parse_date_fuzzy(s):
     """Try to parse various date formats; return datetime.date or None."""
     if not s:
         return None
-    # try ISO
+    # ISO (handles 'YYYY-MM-DD' and 'YYYY-MM-DD HH:MM:SS')
     try:
         return datetime.fromisoformat(s).date()
     except Exception:
         pass
-    # try common European / fallback
     for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(s, fmt).date()
@@ -142,67 +149,69 @@ def track_incremental(sm, prev):
             prev[row_key] = seen
     return total
 
-# --- NEW helper --------------------------------------------------------------
+# -------------------- Bootstrap helpers --------------------
 def get_cell_val(cell):
     return (cell.display_value or cell.value or "")
 
-def infer_group_from_primary(text, group_keys):
-    """Nimmt die ersten 2 Buchstaben der Primärspalte und matcht gegen deine Gruppen-Codes."""
-    if not text:
-        return ""
-    prefix = text.strip().upper()[:2]
-    for g in group_keys:
-        if prefix == g.upper():
-            return g
-    # Fallback: startswith
-    for g in group_keys:
-        if text.strip().upper().startswith(g.upper()):
-            return g
+GROUP_CODES = tuple(SHEET_IDS.keys())
+
+def infer_group_from_texts(texts):
+    """
+    Sucht zuerst exakte Codes (NA/NF/...) als Wort, danach Prefix auf ersten 2 Buchstaben.
+    """
+    joined_upper = " ".join(t.upper() for t in texts if t)
+    m = re.search(r'\b(NA|NF|NH|NM|NP|NT|NV)\b', joined_upper)
+    if m:
+        return m.group(1)
+
+    for t in texts:
+        if not t:
+            continue
+        pref = t.strip().upper()[:2]
+        if pref in GROUP_CODES:
+            return pref
     return ""
 
-
-# --- REPLACE your old seed_from_sheet with this one --------------------------
 def seed_from_sheet(sm, prev):
     """
     Bootstrap: liest ALLE Zeilen aus dem Seed-Sheet (ohne 90-Tage-Filter) und
-    schreibt sie in die Monats-CSV. Fehlende 'Produktgruppe' wird aus der
-    Primärspalte (erste 2 Buchstaben) abgeleitet.
+    schreibt sie in die Monats-CSV. Fehlende 'Produktgruppe' wird aus Texten (insbes. Primärspalte)
+    abgeleitet.
     """
     sheet = sm.Sheets.get_sheet(SEED_SHEET_ID)
     col_map = {c.id: c.title for c in sheet.columns}
-    # Primärspalte finden
     primary_col_id = next((c.id for c in sheet.columns if getattr(c, "primary", False)), None)
 
-    added = 0
-    skipped_no_date = 0
-    skipped_dup = 0
+    added = skipped_no_date = skipped_dup = 0
 
     for row in sheet.rows:
         rec = {}
-        # alle Werte sammeln
+        texts_for_group = []
+
         for cell in row.cells:
             title = col_map.get(cell.column_id, "")
-            rec[title] = get_cell_val(cell).strip()
+            val = get_cell_val(cell).strip()
+            rec[title] = val
+            if val:
+                texts_for_group.append(val)
 
-        # Produktgruppe ggf. ableiten
+        # Primärspalte text extra dazu
+        if primary_col_id:
+            prim = next((get_cell_val(c).strip() for c in row.cells if c.column_id == primary_col_id), "")
+            if prim:
+                texts_for_group.append(prim)
+
         grp = rec.get("Produktgruppe", "").strip()
-        if not grp and primary_col_id:
-            prim_txt = ""
-            for cell in row.cells:
-                if cell.column_id == primary_col_id:
-                    prim_txt = get_cell_val(cell).strip()
-                    break
-            grp = infer_group_from_primary(prim_txt, list(SHEET_IDS.keys()))
+        if not grp:
+            grp = infer_group_from_texts(texts_for_group)
 
-        # Land/Marketplace
         land = rec.get("Land/Marketplace", "").strip() or rec.get("Amazon", "").strip()
 
-        # Datum
         raw_date = rec.get("Datum", "").strip()
         dt = parse_date_fuzzy(raw_date)
 
         if not dt:
-            # versuche alle definierten Phase-Spalten
+            # versuche Phase-Spalten
             for date_col, _user_col, phno in PHASE_FIELDS:
                 cand = rec.get(date_col, "").strip()
                 if cand:
@@ -216,7 +225,6 @@ def seed_from_sheet(sm, prev):
             skipped_no_date += 1
             continue
 
-        # Phase / Feld
         phase = rec.get("Phase", "").strip()
         field = rec.get("Feld", "").strip()
         if not field:
@@ -230,7 +238,7 @@ def seed_from_sheet(sm, prev):
         ts_str = rec.get("Änderung am", "").strip() or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         user   = rec.get("Mitarbeiter", "").strip()
 
-        # Backup-Key (damit wir nicht doppeln)
+        # Backup-Key für Seed (ohne Row-ID)
         key = f"{grp}:{land}:{field}:{raw_date}"
         seen = prev.get(key, [])
         if raw_date in seen:
@@ -246,7 +254,6 @@ def seed_from_sheet(sm, prev):
     print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne Datum, {skipped_dup} Duplikate.")
     return added
 
-
 # -------------------- MAIN --------------------
 def main():
     load_dotenv()
@@ -256,9 +263,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bootstrap", action="store_true",
                         help="Einmalige Initial-Füllung aus Seed-Sheet.")
-    # days bleibt für Abwärtskompatibilität, ist aber egal
     parser.add_argument("--days", type=int, default=-1,
-                        help="(Ignoriert beim Bootstrap) Zeitraum in Tagen.")
+                        help="(Ignoriert beim Bootstrap) Zeitraum in Tagen für alte Variante.")
     args = parser.parse_args()
 
     prev = load_backup(BACKUP_FILE)
