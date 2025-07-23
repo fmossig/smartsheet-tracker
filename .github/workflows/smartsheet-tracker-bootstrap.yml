@@ -33,7 +33,6 @@ jobs:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           mkdir -p tracker_logs
-          # Argument-Handling: kein/0 -> ohne Cutoff
           if [ -z "${{ github.event.inputs.days }}" ] || [ "${{ github.event.inputs.days }}" = "0" ]; then
             EXTRA_ARGS="--no-cutoff"
           else
@@ -46,9 +45,8 @@ jobs:
           git config user.name  "github-actions"
           git config user.email "actions@github.com"
 
-          # Nur committen, wenn es etwas gibt
           git add -f tracker_logs/*.csv 2>/dev/null || true
           git add -f tracker_logs/date_backup.csv 2>/dev/null || true
 
           git diff --cached --quiet && echo "No changes" || git commit -m "Bootstrap change logs"
-          git push || echo "No push needed"
+          git push || echo "No push"
