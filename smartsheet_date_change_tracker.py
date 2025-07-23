@@ -29,13 +29,17 @@ PHASE_FIELDS = [
 
 AMAZON_COL = "Amazon"
 
-BACKUP_FILE = "date_backup.csv"
+# ---- Dateien jetzt im Unterordner ----
+LOG_DIR = "tracker_logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+BACKUP_FILE = os.path.join(LOG_DIR, "date_backup.csv")
 
 # -------------------- Writer Cache --------------------
-_writer_cache = {}  # month_file -> (file_handle, csv_writer)
+_writer_cache = {}  # month_file_path -> (file_handle, csv_writer)
 
 def month_file_from_date(d):
-    return f"date_changes_log_{d.strftime('%m.%Y')}.csv"
+    return os.path.join(LOG_DIR, f"date_changes_log_{d.strftime('%m.%Y')}.csv")
 
 def get_writer_for_date(dt):
     """Return csv.writer for the month of dt, open/cached."""
@@ -77,12 +81,10 @@ def parse_date_fuzzy(s):
     """Try to parse various date formats; return datetime.date or None."""
     if not s:
         return None
-    # try ISO
     try:
         return datetime.fromisoformat(s).date()
     except Exception:
         pass
-    # try common European format
     for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(s, fmt).date()
@@ -118,7 +120,7 @@ def track_incremental(sm, prev):
             for date_col, user_col, phase_no in PHASE_FIELDS:
                 date_val = ""
                 user_val = ""
-                # collect values
+
                 for cell in row.cells:
                     title = col_map.get(cell.column_id, "")
                     if title == date_col:
@@ -164,7 +166,7 @@ def seed_from_sheet(sm, prev, days_back):
         if not dt or dt < cutoff:
             continue
 
-        # log & backup key
+        # simpler Key, aber konsistent anders als Nightly; ok für Seed
         key = f"{rec['Produktgruppe']}:{rec['Land/Marketplace']}:{rec['Datum']}:{rec['Feld']}"
         seen = prev.get(key, [])
         if rec["Datum"] in seen:
