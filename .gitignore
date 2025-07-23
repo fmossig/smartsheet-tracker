@@ -2,3 +2,30 @@
 __pycache__/
 date_backup.csv
 # weekly/weekly_changes.csv soll ins Repo
+# Secrets / Env
+.env
+*.env.local
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs & artifacts you DON'T want
+*.log
+
+# --- Tracker ---
+# Wir wollen ALLES in tracker_logs behalten, also NICHT ignorieren:
+!tracker_logs/
+# (Falls du dort temporäre Files hättest, spezifisch ignorieren.)
+
+# Alte Regel entfernen/ändern:
+# date_backup.csv  <-- RAUS!  (liegt nun unter tracker_logs/date_backup.csv)
