@@ -2,33 +2,96 @@ name: Smartsheet Tracker Nightly
 
 on:
   schedule:
-    - cron: '0 0 * * *'     # täglich 00:00 UTC
-  workflow_dispatch:
+    - cron: '0 0 * * *'          # täglich 00:00 UTC
+  workflow_dispatch:             # manueller Start möglich
 
 permissions:
-  contents: write
+  contents: write                # für git commit/push
+
+concurrency:
+  group: smartsheet-tracker-nightly
+  cancel-in-progress: false
 
 jobs:
   tracker:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      # --- Checkout mit einfachem Retry (3x) ---
+      - name: Checkout (with retry)
+        uses: devops-infra/action-retry@v3
         with:
-          python-version: '3.x'
+          max_attempts: 3
+          retry_wait_seconds: 10
+          timeout_minutes: 5
+          command: |
+            actions/checkout@v4
 
-      - run: pip install -r requirements.txt
+      # --- Python Setup & Cache ---
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
-      - name: Run incremental tracker
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # --- Tracker ausführen (bis zu 3 Versuche) ---
+      - name: Run date change tracker (auto-retry)
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
-        run: python smartsheet_date_change_tracker.py
-
-      - name: Commit CSV/backup
         run: |
-          git config user.name "github-actions"
+          set -e
+          for attempt in 1 2 3; do
+            echo "▶️  Attempt $attempt..."
+            python smartsheet_date_change_tracker.py && break || true
+            if [ $attempt -lt 3 ]; then
+              echo "⏳ Retry in 15s..."
+              sleep 15
+            else
+              echo "❌ All attempts failed."
+              exit 1
+            fi
+          done
+
+      # --- CSV/Backup committen & pushen ---
+      - name: Commit CSV snapshot(s)
+        run: |
+          set -e
+          MONTH_YEAR=$(date -u +'%m.%Y')
+          LOG_FILE="date_changes_log_${MONTH_YEAR}.csv"
+          BACKUP_FILE="date_backup.csv"
+
+          git config user.name  "github-actions"
           git config user.email "actions@github.com"
-          git add -f date_changes_log_*.csv date_backup.csv
-          git commit -m "Nightly log update" || echo "No changes"
-          git push
+
+          CHANGED=0
+          if [ -f "$LOG_FILE" ]; then
+            git add -f "$LOG_FILE"
+            CHANGED=1
+          fi
+          if [ -f "$BACKUP_FILE" ]; then
+            git add -f "$BACKUP_FILE"
+            CHANGED=1
+          fi
+
+          if [ $CHANGED -eq 1 ]; then
+            git commit -m "Update date change logs (${MONTH_YEAR})" || echo "No diff to commit"
+            git push || echo "Push skipped"
+          else
+            echo "ℹ️  No CSV files to commit."
+          fi
+
+      # --- Artefakte hochladen (zur Sicherheit) ---
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: date-change-logs
+          path: |
+            date_changes_log_*.csv
+            date_backup.csv
+          if-no-files-found: ignore
