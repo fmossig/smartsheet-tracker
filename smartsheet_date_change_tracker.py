@@ -142,55 +142,87 @@ def track_incremental(sm, prev):
             prev[row_key] = seen
     return total
 
-# -------------------- Bootstrap --------------------
+def get_cell_val(cell):
+    # erst display_value, dann value (falls z.B. echtes Datum)
+    return (cell.display_value or cell.value or "")
+
 def seed_from_sheet(sm, prev):
     """
-    Liest ALLE Zeilen aus dem Seed-Sheet (keine 90-Tage-Filterung mehr)
-    und schreibt sie in die monatlichen CSVs, sofern noch nicht im Backup.
-    Erwartete Spaltennamen im Seed-Sheet:
-      Änderung am, Produktgruppe, Land/Marketplace, Phase, Feld, Datum, Mitarbeiter
+    Liest ALLE Zeilen aus dem Seed-Sheet (keine 90d-Filter).
+    Versucht robust, die Felder zu extrahieren.
     """
     sheet = sm.Sheets.get_sheet(SEED_SHEET_ID)
     col_map = {c.id: c.title for c in sheet.columns}
 
-    # Wir prüfen nicht mehr streng – holen nur, was wir finden.
-    needed = ["Änderung am","Produktgruppe","Land/Marketplace","Phase","Feld","Datum","Mitarbeiter"]
-
     added = 0
+    skipped_no_date = 0
+    skipped_dup = 0
+
     for row in sheet.rows:
         rec = {}
+
+        # Erstmal alles einsammeln, was wir kennen
         for cell in row.cells:
             title = col_map.get(cell.column_id, "")
-            if title in needed:
-                rec[title] = (cell.display_value or "").strip()
+            rec[title] = get_cell_val(cell).strip()
 
-        # Mindestens Datum + Produktgruppe müssen da sein
-        dt = parse_date_fuzzy(rec.get("Datum"))
+        # Land/Marketplace fallback
+        land = rec.get("Land/Marketplace", "").strip()
+        if not land:
+            land = rec.get("Amazon", "").strip()
+
+        # Datum aus "Datum" oder zur Not aus den Phasenfeldern
+        raw_date = rec.get("Datum", "").strip()
+        dt = parse_date_fuzzy(raw_date)
+
         if not dt:
+            # versuche jede Phase-Spalte
+            for date_col, _user_col, _ph in PHASE_FIELDS:
+                cand = rec.get(date_col, "").strip()
+                if cand:
+                    dt = parse_date_fuzzy(cand)
+                    if dt:
+                        raw_date = cand
+                        break
+
+        if not dt:
+            skipped_no_date += 1
             continue
 
-        # Fallbacks
-        ts_str   = rec.get("Änderung am", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-        grp      = rec.get("Produktgruppe", "")
-        land     = rec.get("Land/Marketplace", "")
-        phase    = rec.get("Phase", "")
-        field    = rec.get("Feld", "")
-        date_val = rec.get("Datum", "")
-        user     = rec.get("Mitarbeiter", "")
+        # Phase / Feld – wenn im Seed nicht vorhanden, aus Feldnamen ableiten
+        phase = rec.get("Phase", "").strip()
+        field = rec.get("Feld", "").strip()
+        if not field:
+            # Versuch: wenn raw_date aus Phase-Spalte kam, nimm deren Namen
+            for date_col, _user_col, phno in PHASE_FIELDS:
+                if rec.get(date_col, "").strip() == raw_date:
+                    field = date_col
+                    if not phase:
+                        phase = str(phno)
+                    break
 
-        # Backup-Key: pro Row einzigartig genug gestalten
-        key = f"{grp}:{land}:{field}:{date_val}"
+        # Änderung am (timestamp)
+        ts_str = rec.get("Änderung am", "").strip()
+        if not ts_str:
+            ts_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+        grp  = rec.get("Produktgruppe", "").strip()
+        user = rec.get("Mitarbeiter", "").strip()
+
+        # Backup-Key – so nah wie möglich an deiner CSV-Struktur
+        key = f"{grp}:{land}:{field}:{raw_date}"
         seen = prev.get(key, [])
-
-        if date_val in seen:
+        if raw_date in seen:
+            skipped_dup += 1
             continue
 
         w = get_writer_for_date(dt)
-        append_change(w, ts_str, grp, land, phase, field, date_val, user)
-        seen.append(date_val)
+        append_change(w, ts_str, grp, land, phase, field, raw_date, user)
+        seen.append(raw_date)
         prev[key] = seen
         added += 1
 
+    print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne Datum, {skipped_dup} Duplikate.")
     return added
 
 # -------------------- MAIN --------------------
