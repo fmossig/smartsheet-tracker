@@ -155,105 +155,78 @@ def get_cell_val(cell):
 
 GROUP_CODES = tuple(SHEET_IDS.keys())
 
-def infer_group_from_texts(texts):
-    """
-    Sucht zuerst exakte Codes (NA/NF/...) als Wort, danach Prefix auf ersten 2 Buchstaben.
-    """
-    joined_upper = " ".join(t.upper() for t in texts if t)
-    m = re.search(r'\b(NA|NF|NH|NM|NP|NT|NV)\b', joined_upper)
-    if m:
-        return m.group(1)
-
-    for t in texts:
-        if not t:
-            continue
-        pref = t.strip().upper()[:2]
-        if pref in GROUP_CODES:
-            return pref
-    return ""
+def infer_group_from_primary(text, group_codes):
+    if not text:
+        return ""
+    prefix = text.strip().upper()[:2]
+    return prefix if prefix in group_codes else ""
 
 def seed_from_sheet(sm, prev):
     """
-    Bootstrap: liest ALLE Zeilen aus dem Seed-Sheet (ohne 90-Tage-Filter) und
-    schreibt sie in die Monats-CSV. Fehlende 'Produktgruppe' wird aus Texten (insbes. Primärspalte)
-    abgeleitet.
+    Liest ALLE Zeilen aus dem Seed-Sheet (gleiche Struktur wie Produkt-Sheets).
+    Für jede Phase-Spalte wird (wie im Nightly) ein Eintrag geschrieben,
+    wenn das Datum noch nicht im Backup steht.
     """
     sheet = sm.Sheets.get_sheet(SEED_SHEET_ID)
     col_map = {c.id: c.title for c in sheet.columns}
     primary_col_id = next((c.id for c in sheet.columns if getattr(c, "primary", False)), None)
 
-    added = skipped_no_date = skipped_dup = 0
+    now_utc = datetime.utcnow()
+    ts_str  = now_utc.strftime("%Y-%m-%d %H:%M:%S")
+
+    added = 0
+    skipped_no_date = 0
+    skipped_dup = 0
 
     for row in sheet.rows:
-        rec = {}
-        texts_for_group = []
-
-        for cell in row.cells:
-            title = col_map.get(cell.column_id, "")
-            val = get_cell_val(cell).strip()
-            rec[title] = val
-            if val:
-                texts_for_group.append(val)
-
-        # Primärspalte text extra dazu
+        # Produktgruppe aus Primärspalte
+        grp = ""
         if primary_col_id:
-            prim = next((get_cell_val(c).strip() for c in row.cells if c.column_id == primary_col_id), "")
-            if prim:
-                texts_for_group.append(prim)
+            prim_txt = next(( (cell.display_value or cell.value or "").strip()
+                               for cell in row.cells if cell.column_id == primary_col_id ), "")
+            grp = infer_group_from_primary(prim_txt, list(SHEET_IDS.keys()))
 
-        grp = rec.get("Produktgruppe", "").strip()
-        if not grp:
-            grp = infer_group_from_texts(texts_for_group)
+        # Land/Marketplace
+        land = ""
+        for cell in row.cells:
+            if col_map.get(cell.column_id) == AMAZON_COL:
+                land = (cell.display_value or cell.value or "").strip()
+                break
 
-        land = rec.get("Land/Marketplace", "").strip() or rec.get("Amazon", "").strip()
+        # Werte iterieren wie im Nightly
+        for date_col, user_col, phase_no in PHASE_FIELDS:
+            date_val = ""
+            user_val = ""
+            for cell in row.cells:
+                title = col_map.get(cell.column_id, "")
+                if title == date_col:
+                    date_val = (cell.display_value or cell.value or "").strip()
+                elif title == user_col:
+                    user_val = (cell.display_value or cell.value or "").strip()
 
-        raw_date = rec.get("Datum", "").strip()
-        dt = parse_date_fuzzy(raw_date)
+            if not date_val:
+                continue
 
-        if not dt:
-            # versuche Phase-Spalten
-            for date_col, _user_col, phno in PHASE_FIELDS:
-                cand = rec.get(date_col, "").strip()
-                if cand:
-                    dt_try = parse_date_fuzzy(cand)
-                    if dt_try:
-                        dt = dt_try
-                        raw_date = cand
-                        break
+            dt_obj = parse_date_fuzzy(date_val)
+            if not dt_obj:
+                skipped_no_date += 1
+                continue
 
-        if not dt:
-            skipped_no_date += 1
-            continue
+            # Backup-Key (für Bootstrap ohne Row-ID)
+            key = f"{grp}:{land}:{phase_no}:{date_col}"
+            seen = prev.get(key, [])
+            if date_val in seen:
+                skipped_dup += 1
+                continue
 
-        phase = rec.get("Phase", "").strip()
-        field = rec.get("Feld", "").strip()
-        if not field:
-            for date_col, _user_col, phno in PHASE_FIELDS:
-                if rec.get(date_col, "").strip() == raw_date:
-                    field = date_col
-                    if not phase:
-                        phase = str(phno)
-                    break
-
-        ts_str = rec.get("Änderung am", "").strip() or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        user   = rec.get("Mitarbeiter", "").strip()
-
-        # Backup-Key für Seed (ohne Row-ID)
-        key = f"{grp}:{land}:{field}:{raw_date}"
-        seen = prev.get(key, [])
-        if raw_date in seen:
-            skipped_dup += 1
-            continue
-
-        w = get_writer_for_date(dt)
-        append_change(w, ts_str, grp, land, phase, field, raw_date, user)
-        seen.append(raw_date)
-        prev[key] = seen
-        added += 1
+            w = get_writer_for_date(dt_obj)
+            append_change(w, ts_str, grp, land, phase_no, date_col, date_val, user_val)
+            seen.append(date_val)
+            prev[key] = seen
+            added += 1
 
     print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne Datum, {skipped_dup} Duplikate.")
     return added
-
 # -------------------- MAIN --------------------
 def main():
     load_dotenv()
