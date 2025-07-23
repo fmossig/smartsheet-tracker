@@ -506,7 +506,8 @@ def make_report():
     elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
     elems.append(Spacer(1, 6*mm))
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
-
+    elems.append(Spacer(1, 4*mm))
+    
     usable_width = A4[0] - doc.leftMargin - doc.rightMargin
     chart_height = 55*mm
     origin_y = 25*mm
