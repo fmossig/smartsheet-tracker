@@ -149,83 +149,88 @@ def track_incremental(sm, prev):
             prev[row_key] = seen
     return total
 
-# -------------------- Bootstrap helpers --------------------
+# -------------------- Helpers --------------------
 def get_cell_val(cell):
-    return (cell.display_value or cell.value or "")
+    return (cell.display_value or cell.value or "") if cell else ""
 
-GROUP_CODES = tuple(SHEET_IDS.keys())
+def get_cell_by_title(row, col_map, title):
+    for c in row.cells:
+        if col_map.get(c.column_id) == title:
+            return get_cell_val(c).strip()
+    return ""
 
-def infer_group_from_primary(text, group_codes):
+def infer_group_from_primary(text, group_keys):
     if not text:
         return ""
     prefix = text.strip().upper()[:2]
-    return prefix if prefix in group_codes else ""
+    for g in group_keys:
+        if prefix == g.upper():
+            return g
+    for g in group_keys:
+        if text.strip().upper().startswith(g.upper()):
+            return g
+    return ""
 
+# -------------------- Bootstrap (ersetzt die alte seed_from_sheet) --------------------
 def seed_from_sheet(sm, prev):
     """
-    Liest ALLE Zeilen aus dem Seed-Sheet (gleiche Struktur wie Produkt-Sheets).
-    Für jede Phase-Spalte wird (wie im Nightly) ein Eintrag geschrieben,
-    wenn das Datum noch nicht im Backup steht.
+    Liest ALLE Zeilen aus dem Smartsheet-Aktivitätentracker (SEED_SHEET_ID)
+    und schreibt JEDE vorhandene Phasen-Datumsspalte in die Monats-CSV.
+    Produktgruppe wird aus der Primärspalte abgeleitet, wenn leer.
     """
     sheet = sm.Sheets.get_sheet(SEED_SHEET_ID)
     col_map = {c.id: c.title for c in sheet.columns}
     primary_col_id = next((c.id for c in sheet.columns if getattr(c, "primary", False)), None)
 
-    now_utc = datetime.utcnow()
-    ts_str  = now_utc.strftime("%Y-%m-%d %H:%M:%S")
-
     added = 0
     skipped_no_date = 0
     skipped_dup = 0
 
+    now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
     for row in sheet.rows:
-        # Produktgruppe aus Primärspalte
-        grp = ""
+        # Primärspalte -> Gruppe
+        prim_txt = ""
         if primary_col_id:
-            prim_txt = next(( (cell.display_value or cell.value or "").strip()
-                               for cell in row.cells if cell.column_id == primary_col_id ), "")
-            grp = infer_group_from_primary(prim_txt, list(SHEET_IDS.keys()))
+            prim_txt = get_cell_val(next((c for c in row.cells if c.column_id == primary_col_id), None)).strip()
+        grp = get_cell_by_title(row, col_map, "Produktgruppe")
+        if not grp:
+            grp = infer_group_from_primary(prim_txt, SHEET_IDS.keys())
 
-        # Land/Marketplace
-        land = ""
-        for cell in row.cells:
-            if col_map.get(cell.column_id) == AMAZON_COL:
-                land = (cell.display_value or cell.value or "").strip()
-                break
+        # Land / Marketplace
+        land = get_cell_by_title(row, col_map, "Land/Marketplace")
+        if not land:
+            land = get_cell_by_title(row, col_map, AMAZON_COL)
 
-        # Werte iterieren wie im Nightly
+        # Zeitstempel „Änderung am“ (falls vorhanden)
+        change_ts = get_cell_by_title(row, col_map, "Änderung am") or now_ts
+
+        # Für jede Phase-Spalte loggen
         for date_col, user_col, phase_no in PHASE_FIELDS:
-            date_val = ""
-            user_val = ""
-            for cell in row.cells:
-                title = col_map.get(cell.column_id, "")
-                if title == date_col:
-                    date_val = (cell.display_value or cell.value or "").strip()
-                elif title == user_col:
-                    user_val = (cell.display_value or cell.value or "").strip()
-
+            date_val = get_cell_by_title(row, col_map, date_col)
             if not date_val:
                 continue
-
             dt_obj = parse_date_fuzzy(date_val)
             if not dt_obj:
                 skipped_no_date += 1
                 continue
 
-            # Backup-Key (für Bootstrap ohne Row-ID)
-            key = f"{grp}:{land}:{phase_no}:{date_col}"
+            user_val = get_cell_by_title(row, col_map, user_col)
+
+            # Backup-Key eindeutig machen
+            key = f"{grp}:{land}:{phase_no}:{date_col}:{date_val}"
             seen = prev.get(key, [])
             if date_val in seen:
                 skipped_dup += 1
                 continue
 
             w = get_writer_for_date(dt_obj)
-            append_change(w, ts_str, grp, land, phase_no, date_col, date_val, user_val)
+            append_change(w, change_ts, grp, land, phase_no, date_col, date_val, user_val)
             seen.append(date_val)
             prev[key] = seen
             added += 1
 
-    print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne Datum, {skipped_dup} Duplikate.")
+    print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne/ungültiges Datum, {skipped_dup} Duplikate.")
     return added
 # -------------------- MAIN --------------------
 def main():
