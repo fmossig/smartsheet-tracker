@@ -153,6 +153,15 @@ def track_incremental(sm, prev):
 def get_cell_val(cell):
     return (cell.display_value or cell.value or "") if cell else ""
 
+def row_dict(row, col_map):
+    """Schneller Zugriff: title -> value für eine Row."""
+    d = {}
+    for c in row.cells:
+        title = col_map.get(c.column_id, "")
+        if title:
+            d[title] = get_cell_val(c).strip()
+    return d
+
 def get_cell_by_title(row, col_map, title):
     for c in row.cells:
         if col_map.get(c.column_id) == title:
@@ -162,12 +171,13 @@ def get_cell_by_title(row, col_map, title):
 def infer_group_from_primary(text, group_keys):
     if not text:
         return ""
-    prefix = text.strip().upper()[:2]
+    txt = text.strip().upper()
+    prefix = txt[:2]
     for g in group_keys:
         if prefix == g.upper():
             return g
     for g in group_keys:
-        if text.strip().upper().startswith(g.upper()):
+        if txt.startswith(g.upper()):
             return g
     return ""
 
@@ -189,49 +199,58 @@ def seed_from_sheet(sm, prev):
     now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     for row in sheet.rows:
-        # Primärspalte -> Gruppe
+        # Dict aller Werte der Row
+        rdict = row_dict(row, col_map)
+
+        # Primärspalte -> Gruppe (Fallback)
         prim_txt = ""
         if primary_col_id:
-            prim_txt = get_cell_val(next((c for c in row.cells if c.column_id == primary_col_id), None)).strip()
-        grp = get_cell_by_title(row, col_map, "Produktgruppe")
+            prim_cell = next((c for c in row.cells if c.column_id == primary_col_id), None)
+            prim_txt  = get_cell_val(prim_cell).strip()
+
+        grp = rdict.get("Produktgruppe", "")
         if not grp:
-            grp = infer_group_from_primary(prim_txt, SHEET_IDS.keys())
+            grp = infer_group_from_primary(prim_txt, list(SHEET_IDS.keys()))
 
         # Land / Marketplace
-        land = get_cell_by_title(row, col_map, "Land/Marketplace")
-        if not land:
-            land = get_cell_by_title(row, col_map, AMAZON_COL)
+        land = rdict.get("Land/Marketplace", "") or rdict.get(AMAZON_COL, "")
 
         # Zeitstempel „Änderung am“ (falls vorhanden)
-        change_ts = get_cell_by_title(row, col_map, "Änderung am") or now_ts
+        change_ts = rdict.get("Änderung am", "") or now_ts
 
         # Für jede Phase-Spalte loggen
         for date_col, user_col, phase_no in PHASE_FIELDS:
-            date_val = get_cell_by_title(row, col_map, date_col)
+            date_val = rdict.get(date_col, "")
             if not date_val:
                 continue
+
             dt_obj = parse_date_fuzzy(date_val)
             if not dt_obj:
                 skipped_no_date += 1
                 continue
 
-            user_val = get_cell_by_title(row, col_map, user_col)
+            user_val = rdict.get(user_col, "") or rdict.get("Mitarbeiter", "")
 
-            # Backup-Key eindeutig machen
-            key = f"{grp}:{land}:{phase_no}:{date_col}:{date_val}"
-            seen = prev.get(key, [])
-            if date_val in seen:
+            # Backup-Key eindeutiger machen (Feld+Datum)
+            key = f"{grp}:{land}:{phase_no}:{date_col}"
+            seen_list = prev.get(key, [])
+            seen = set(seen_list)
+
+            pair = f"{date_col}|{date_val}"
+            if pair in seen:
                 skipped_dup += 1
                 continue
 
             w = get_writer_for_date(dt_obj)
             append_change(w, change_ts, grp, land, phase_no, date_col, date_val, user_val)
-            seen.append(date_val)
-            prev[key] = seen
+
+            seen.add(pair)
+            prev[key] = list(seen)
             added += 1
 
     print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne/ungültiges Datum, {skipped_dup} Duplikate.")
     return added
+
 # -------------------- MAIN --------------------
 def main():
     load_dotenv()
