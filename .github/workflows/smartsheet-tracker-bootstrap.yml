@@ -1,0 +1,38 @@
+name: Smartsheet Tracker Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Vergangenheit in Tagen'
+        required: false
+        default: '90'
+
+permissions:
+  contents: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: pip install -r requirements.txt
+
+      - name: Seed from Smartsheet log
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: |
+          python smartsheet_date_change_tracker.py --bootstrap --days ${{ github.event.inputs.days }}
+
+      - name: Commit seeded CSV & backup
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -f date_changes_log_*.csv date_backup.csv
+          git commit -m "Bootstrap change logs" || echo "No changes"
+          git push
