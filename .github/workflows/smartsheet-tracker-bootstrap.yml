@@ -1,15 +1,14 @@
 name: Smartsheet Tracker Bootstrap
 
 on:
-  workflow_dispatch:
-    inputs:
-      days:
-        description: 'Vergangenheit in Tagen (leer oder 0 = kein Cutoff)'
-        required: false
-        default: '90'
+  workflow_dispatch: {}          # manueller Start
 
 permissions:
   contents: write
+
+concurrency:
+  group: smartsheet-tracker-bootstrap
+  cancel-in-progress: false
 
 jobs:
   seed:
@@ -28,25 +27,31 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Bootstrap tracker CSVs
+      - name: Bootstrap tracker logs from Smartsheet
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
-          mkdir -p tracker_logs
-          if [ -z "${{ github.event.inputs.days }}" ] || [ "${{ github.event.inputs.days }}" = "0" ]; then
-            EXTRA_ARGS="--no-cutoff"
-          else
-            EXTRA_ARGS="--days ${{ github.event.inputs.days }}"
-          fi
-          python smartsheet_date_change_tracker.py --bootstrap $EXTRA_ARGS
+          python smartsheet_date_change_tracker.py --bootstrap
 
-      - name: Commit seeded CSV & backup
+      - name: Commit tracker CSVs & backup
         run: |
+          set -e
           git config user.name  "github-actions"
           git config user.email "actions@github.com"
 
-          git add -f tracker_logs/*.csv 2>/dev/null || true
-          git add -f tracker_logs/date_backup.csv 2>/dev/null || true
+          # nur committen, wenn es Dateien gibt
+          if ls tracker_logs/*.csv >/dev/null 2>&1; then
+            git add -f tracker_logs/*.csv
+            git commit -m "Bootstrap change logs" || echo "No diff"
+            git push || echo "Push skipped"
+          else
+            echo "No CSVs to commit."
+          fi
 
-          git diff --cached --quiet && echo "No changes" || git commit -m "Bootstrap change logs"
-          git push || echo "No push"
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracker-logs-bootstrap
+          path: tracker_logs/*.csv
+          if-no-files-found: ignore
