@@ -1,0 +1,34 @@
+name: Smartsheet Tracker Nightly
+
+on:
+  schedule:
+    - cron: '0 0 * * *'     # täglich 00:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tracker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: pip install -r requirements.txt
+
+      - name: Run incremental tracker
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: python smartsheet_date_change_tracker.py
+
+      - name: Commit CSV/backup
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -f date_changes_log_*.csv date_backup.csv
+          git commit -m "Nightly log update" || echo "No changes"
+          git push
