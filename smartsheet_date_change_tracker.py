@@ -154,75 +154,66 @@ def get_cell_val(cell):
     return (cell.display_value or cell.value or "") if cell else ""
 
 def row_dict(row, col_map):
-    """Schneller Zugriff: title -> value für eine Row."""
+    """title -> value dict für eine Row."""
     d = {}
     for c in row.cells:
-        title = col_map.get(c.column_id, "")
-        if title:
-            d[title] = get_cell_val(c).strip()
+        t = col_map.get(c.column_id, "")
+        if t:
+            d[t] = get_cell_val(c).strip()
     return d
-
-def get_cell_by_title(row, col_map, title):
-    for c in row.cells:
-        if col_map.get(c.column_id) == title:
-            return get_cell_val(c).strip()
-    return ""
 
 def infer_group_from_primary(text, group_keys):
     if not text:
         return ""
     txt = text.strip().upper()
-    prefix = txt[:2]
-    for g in group_keys:
-        if prefix == g.upper():
-            return g
+    pref = txt[:2]
+    if pref in [g.upper() for g in group_keys]:
+        return pref
     for g in group_keys:
         if txt.startswith(g.upper()):
             return g
     return ""
 
-# -------------------- Bootstrap (ersetzt die alte seed_from_sheet) --------------------
-def seed_from_sheet(sm, prev):
+# -------------------- Bootstrap --------------------
+def seed_from_sheet(sm, prev, dedupe=False, verbose=True):
     """
-    Liest ALLE Zeilen aus dem Smartsheet-Aktivitätentracker (SEED_SHEET_ID)
-    und schreibt JEDE vorhandene Phasen-Datumsspalte in die Monats-CSV.
-    Produktgruppe wird aus der Primärspalte abgeleitet, wenn leer.
+    Bootstrap: ALLE Phase-Daten aus dem Seed-Sheet schreiben.
+    - Kein 90-Tage-Filter
+    - Produktgruppe aus Primärspalte, falls leer
+    - dedupe=False: ignoriert backup (schreibt alles)
     """
     sheet = sm.Sheets.get_sheet(SEED_SHEET_ID)
     col_map = {c.id: c.title for c in sheet.columns}
     primary_col_id = next((c.id for c in sheet.columns if getattr(c, "primary", False)), None)
 
+    now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
     added = 0
     skipped_no_date = 0
     skipped_dup = 0
 
-    now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    # Statistik je Phase
+    per_phase_found = {p[0]: 0 for p in PHASE_FIELDS}
+    per_phase_written = {p[0]: 0 for p in PHASE_FIELDS}
 
     for row in sheet.rows:
-        # Dict aller Werte der Row
         rdict = row_dict(row, col_map)
 
-        # Primärspalte -> Gruppe (Fallback)
-        prim_txt = ""
-        if primary_col_id:
-            prim_cell = next((c for c in row.cells if c.column_id == primary_col_id), None)
-            prim_txt  = get_cell_val(prim_cell).strip()
-
+        # Gruppe
         grp = rdict.get("Produktgruppe", "")
-        if not grp:
-            grp = infer_group_from_primary(prim_txt, list(SHEET_IDS.keys()))
+        if not grp and primary_col_id:
+            prim_cell = next((c for c in row.cells if c.column_id == primary_col_id), None)
+            grp = infer_group_from_primary(get_cell_val(prim_cell), SHEET_IDS.keys())
 
-        # Land / Marketplace
         land = rdict.get("Land/Marketplace", "") or rdict.get(AMAZON_COL, "")
-
-        # Zeitstempel „Änderung am“ (falls vorhanden)
         change_ts = rdict.get("Änderung am", "") or now_ts
+        row_key_part = str(row.id)
 
-        # Für jede Phase-Spalte loggen
         for date_col, user_col, phase_no in PHASE_FIELDS:
             date_val = rdict.get(date_col, "")
             if not date_val:
                 continue
+            per_phase_found[date_col] += 1
 
             dt_obj = parse_date_fuzzy(date_val)
             if not dt_obj:
@@ -231,24 +222,31 @@ def seed_from_sheet(sm, prev):
 
             user_val = rdict.get(user_col, "") or rdict.get("Mitarbeiter", "")
 
-            # Backup-Key eindeutiger machen (Feld+Datum)
-            key = f"{grp}:{land}:{phase_no}:{date_col}"
-            seen_list = prev.get(key, [])
-            seen = set(seen_list)
-
-            pair = f"{date_col}|{date_val}"
-            if pair in seen:
-                skipped_dup += 1
-                continue
+            if dedupe:
+                # Backup-Key inkl. Row-ID damit identische Daten in anderer Zeile nicht wegfallen
+                key = f"{grp}:{land}:{phase_no}:{date_col}:{row_key_part}"
+                seen = set(prev.get(key, []))
+                pair = f"{date_val}"
+                if pair in seen:
+                    skipped_dup += 1
+                    continue
+                seen.add(pair)
+                prev[key] = list(seen)
+            # Wenn dedupe=False, wir schreiben einfach.
 
             w = get_writer_for_date(dt_obj)
             append_change(w, change_ts, grp, land, phase_no, date_col, date_val, user_val)
-
-            seen.add(pair)
-            prev[key] = list(seen)
+            per_phase_written[date_col] += 1
             added += 1
 
-    print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne/ungültiges Datum, {skipped_dup} Duplikate.")
+    if verbose:
+        print("Bootstrap-Statistik:")
+        print(f"  +{added} Zeilen geschrieben")
+        print(f"  {skipped_no_date} ohne/ungültiges Datum")
+        print(f"  {skipped_dup} Duplikate (nur wenn dedupe=True)")
+        for col in PHASE_FIELDS:
+            name = col[0]
+            print(f"  {name}: gefunden {per_phase_found[name]}, geschrieben {per_phase_written[name]}")
     return added
 
 # -------------------- MAIN --------------------
