@@ -142,17 +142,36 @@ def track_incremental(sm, prev):
             prev[row_key] = seen
     return total
 
+# --- NEW helper --------------------------------------------------------------
 def get_cell_val(cell):
-    # erst display_value, dann value (falls z.B. echtes Datum)
     return (cell.display_value or cell.value or "")
 
+def infer_group_from_primary(text, group_keys):
+    """Nimmt die ersten 2 Buchstaben der Primärspalte und matcht gegen deine Gruppen-Codes."""
+    if not text:
+        return ""
+    prefix = text.strip().upper()[:2]
+    for g in group_keys:
+        if prefix == g.upper():
+            return g
+    # Fallback: startswith
+    for g in group_keys:
+        if text.strip().upper().startswith(g.upper()):
+            return g
+    return ""
+
+
+# --- REPLACE your old seed_from_sheet with this one --------------------------
 def seed_from_sheet(sm, prev):
     """
-    Liest ALLE Zeilen aus dem Seed-Sheet (keine 90d-Filter).
-    Versucht robust, die Felder zu extrahieren.
+    Bootstrap: liest ALLE Zeilen aus dem Seed-Sheet (ohne 90-Tage-Filter) und
+    schreibt sie in die Monats-CSV. Fehlende 'Produktgruppe' wird aus der
+    Primärspalte (erste 2 Buchstaben) abgeleitet.
     """
     sheet = sm.Sheets.get_sheet(SEED_SHEET_ID)
     col_map = {c.id: c.title for c in sheet.columns}
+    # Primärspalte finden
+    primary_col_id = next((c.id for c in sheet.columns if getattr(c, "primary", False)), None)
 
     added = 0
     skipped_no_date = 0
@@ -160,28 +179,36 @@ def seed_from_sheet(sm, prev):
 
     for row in sheet.rows:
         rec = {}
-
-        # Erstmal alles einsammeln, was wir kennen
+        # alle Werte sammeln
         for cell in row.cells:
             title = col_map.get(cell.column_id, "")
             rec[title] = get_cell_val(cell).strip()
 
-        # Land/Marketplace fallback
-        land = rec.get("Land/Marketplace", "").strip()
-        if not land:
-            land = rec.get("Amazon", "").strip()
+        # Produktgruppe ggf. ableiten
+        grp = rec.get("Produktgruppe", "").strip()
+        if not grp and primary_col_id:
+            prim_txt = ""
+            for cell in row.cells:
+                if cell.column_id == primary_col_id:
+                    prim_txt = get_cell_val(cell).strip()
+                    break
+            grp = infer_group_from_primary(prim_txt, list(SHEET_IDS.keys()))
 
-        # Datum aus "Datum" oder zur Not aus den Phasenfeldern
+        # Land/Marketplace
+        land = rec.get("Land/Marketplace", "").strip() or rec.get("Amazon", "").strip()
+
+        # Datum
         raw_date = rec.get("Datum", "").strip()
         dt = parse_date_fuzzy(raw_date)
 
         if not dt:
-            # versuche jede Phase-Spalte
-            for date_col, _user_col, _ph in PHASE_FIELDS:
+            # versuche alle definierten Phase-Spalten
+            for date_col, _user_col, phno in PHASE_FIELDS:
                 cand = rec.get(date_col, "").strip()
                 if cand:
-                    dt = parse_date_fuzzy(cand)
-                    if dt:
+                    dt_try = parse_date_fuzzy(cand)
+                    if dt_try:
+                        dt = dt_try
                         raw_date = cand
                         break
 
@@ -189,11 +216,10 @@ def seed_from_sheet(sm, prev):
             skipped_no_date += 1
             continue
 
-        # Phase / Feld – wenn im Seed nicht vorhanden, aus Feldnamen ableiten
+        # Phase / Feld
         phase = rec.get("Phase", "").strip()
         field = rec.get("Feld", "").strip()
         if not field:
-            # Versuch: wenn raw_date aus Phase-Spalte kam, nimm deren Namen
             for date_col, _user_col, phno in PHASE_FIELDS:
                 if rec.get(date_col, "").strip() == raw_date:
                     field = date_col
@@ -201,15 +227,10 @@ def seed_from_sheet(sm, prev):
                         phase = str(phno)
                     break
 
-        # Änderung am (timestamp)
-        ts_str = rec.get("Änderung am", "").strip()
-        if not ts_str:
-            ts_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        ts_str = rec.get("Änderung am", "").strip() or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        user   = rec.get("Mitarbeiter", "").strip()
 
-        grp  = rec.get("Produktgruppe", "").strip()
-        user = rec.get("Mitarbeiter", "").strip()
-
-        # Backup-Key – so nah wie möglich an deiner CSV-Struktur
+        # Backup-Key (damit wir nicht doppeln)
         key = f"{grp}:{land}:{field}:{raw_date}"
         seen = prev.get(key, [])
         if raw_date in seen:
@@ -224,6 +245,7 @@ def seed_from_sheet(sm, prev):
 
     print(f"Bootstrap-Statistik: +{added} Zeilen, {skipped_no_date} ohne Datum, {skipped_dup} Duplikate.")
     return added
+
 
 # -------------------- MAIN --------------------
 def main():
