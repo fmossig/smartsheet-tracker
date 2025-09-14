@@ -75,7 +75,7 @@ def main():
     today   = date.today()
 
     if args.mode == "nightly":
-        run([args.python, tracker])
+        run([args.python, tracker, "--bootstrap", "--dedupe"])
         return
 
     if args.mode == "weekly":
