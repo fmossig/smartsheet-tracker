@@ -480,33 +480,36 @@ def make_report():
     token = os.getenv("SMARTSHEET_TOKEN")
     client = smartsheet.Smartsheet(token)
 
-now = datetime.now(timezone.utc)
-today = now.date()
+    now = datetime.now(timezone.utc)
+    today = now.date()
 
-override = get_period_override()
-if override:
-    since_date, until_date, out_dir, label = override
-    cutoff = since_date
-    today  = until_date
-    date_str = label or f"{since_date.isoformat()}_{until_date.isoformat()}"
-    pdf_dir = out_dir
-else:
-    cutoff = today - timedelta(days=30)
-    date_str = today.isoformat()
-    pdf_dir = "status"
+    # Zeitraum aus ENV übernehmen (falls gesetzt), sonst 30 Tage Standard
+    override = get_period_override()
+    if override:
+        since_date, until_date, out_dir, label = override
+        cutoff = since_date
+        today  = until_date
+        date_str = label or f"{since_date.isoformat()}_{until_date.isoformat()}"
+        pdf_dir = out_dir
+    else:
+        cutoff = today - timedelta(days=30)
+        date_str = today.isoformat()
+        pdf_dir = "status"
 
-os.makedirs(pdf_dir, exist_ok=True)
-period_text = (
-    f"Zeitraum: {cutoff:%d.%m.%Y} – {today:%d.%m.%Y}"
-    if override else
-    "Zeitraum: letzte 30 Tage"
-)
+    os.makedirs(pdf_dir, exist_ok=True)
+    period_text = (
+        f"Zeitraum: {cutoff:%d.%m.%Y} – {today:%d.%m.%Y}"
+        if override else
+        "Zeitraum: letzte 30 Tage"
+    )
+
 
 
     # --- Tracker-Logs laden (30 Tage) ---
     log_rows = load_log_rows(LOG_DIR, since_date=cutoff, until_date=today)
 
     pdf_file = os.path.join(pdf_dir, f"status_report_{date_str}.pdf")
+
 
 
     doc = SimpleDocTemplate(
