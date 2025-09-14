@@ -48,7 +48,7 @@ def main():
     ap = argparse.ArgumentParser(description="Orchestrator für Tracker + Reports")
     ap.add_argument("mode", choices=["nightly","weekly","monthly","bootstrap"], help="Was ausführen?")
     ap.add_argument("--python", default=sys.executable, help="Welches Python für Subprozesse")
-    ap.add_argument("--tracker-script", default="smartsheet_date_change_tracker (1).py")
+    ap.add_argument("--tracker-script", default="smartsheet_date_change_tracker.py")
     ap.add_argument("--report-script", default="smartsheet_periodic_status_report.py")
     ap.add_argument("--tracker-logs", default="tracker_logs")
     ap.add_argument("--reports-dir", default="reports")
