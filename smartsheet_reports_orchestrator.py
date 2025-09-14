@@ -49,7 +49,7 @@ def main():
     ap.add_argument("mode", choices=["nightly","weekly","monthly","bootstrap"], help="Was ausführen?")
     ap.add_argument("--python", default=sys.executable, help="Welches Python für Subprozesse")
     ap.add_argument("--tracker-script", default="smartsheet_date_change_tracker.py")
-    ap.add_argument("--report-script", default="smartsheet_periodic_status_report.py")
+    ap.add_argument("--report-script", default="smartsheet_status_report.py")
     ap.add_argument("--tracker-logs", default="tracker_logs")
     ap.add_argument("--reports-dir", default="reports")
     ap.add_argument("--months", type=int, default=3, help="Für bootstrap: Anzahl Monate behalten")
