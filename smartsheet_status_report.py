@@ -18,6 +18,27 @@ from reportlab.graphics.charts.piecharts import Pie
 import smartsheet
 from dotenv import load_dotenv
 
+# --- PERIOD-OVERRIDES (Woche/Monat/Custom) ---
+def _parse_ymd(s: str):
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+def get_period_override():
+    """
+    Liest optionale Umgebungsvariablen:
+      REPORT_SINCE  (YYYY-MM-DD)
+      REPORT_UNTIL  (YYYY-MM-DD)
+      REPORT_OUTDIR (Pfad, default: "status")
+      REPORT_LABEL  (z.B. "2025-W36" oder "2025-08")
+    Gibt zurück: (since_date, until_date, out_dir, label) oder None
+    """
+    since = os.getenv("REPORT_SINCE")
+    until = os.getenv("REPORT_UNTIL")
+    if not (since and until):
+        return None
+    out_dir = os.getenv("REPORT_OUTDIR", "status")
+    label   = os.getenv("REPORT_LABEL")  # optional
+    return (_parse_ymd(since), _parse_ymd(until), out_dir, label)
+
 # ---------- Pfade ----------
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
@@ -459,15 +480,34 @@ def make_report():
     token = os.getenv("SMARTSHEET_TOKEN")
     client = smartsheet.Smartsheet(token)
 
-    now = datetime.now(timezone.utc)
-    today = now.date()
-    date_str = today.isoformat()
+now = datetime.now(timezone.utc)
+today = now.date()
+
+override = get_period_override()
+if override:
+    since_date, until_date, out_dir, label = override
+    cutoff = since_date
+    today  = until_date
+    date_str = label or f"{since_date.isoformat()}_{until_date.isoformat()}"
+    pdf_dir = out_dir
+else:
     cutoff = today - timedelta(days=30)
+    date_str = today.isoformat()
+    pdf_dir = "status"
+
+os.makedirs(pdf_dir, exist_ok=True)
+period_text = (
+    f"Zeitraum: {cutoff:%d.%m.%Y} – {today:%d.%m.%Y}"
+    if override else
+    "Zeitraum: letzte 30 Tage"
+)
+
 
     # --- Tracker-Logs laden (30 Tage) ---
     log_rows = load_log_rows(LOG_DIR, since_date=cutoff, until_date=today)
 
-    pdf_file = os.path.join("status", f"status_report_{date_str}.pdf")
+    pdf_file = os.path.join(pdf_dir, f"status_report_{date_str}.pdf")
+
 
     doc = SimpleDocTemplate(
         pdf_file,
@@ -489,7 +529,7 @@ def make_report():
     # ---- Deckblatt ----
     elems.append(Paragraph("Amazon Content Management - Activity Report", styles['CoverTitle']))
     elems.append(Paragraph(f"Erstellungsdatum: {now.strftime('%Y-%m-%d %H:%M UTC')}", styles['CoverInfo']))
-    elems.append(Paragraph(f"Abgrenzungsdatum: {cutoff.isoformat()}", styles['CoverInfo']))
+    elems.append(Paragraph(period_text, styles['CoverInfo']))
     elems.append(Paragraph(f"CODE_VERSION: {CODE_VERSION}", styles['CoverInfo']))
     elems.append(PageBreak())
 
@@ -499,7 +539,8 @@ def make_report():
     group_counts = aggregate_group_counts(log_rows)
     values = [group_counts.get(g, 0) for g in groups]
 
-    elems.append(Paragraph("Produktgruppen Daten (30 Tage)", styles['CoverTitle']))
+    elems.append(Paragraph("Produktgruppen Daten", styles['CoverTitle']))
+    elems.append(Paragraph(period_text, styles['CoverInfo']))
     elems.append(Spacer(1, 6*mm))
     elems.append(Paragraph("Anzahl an eröffneten Phasen pro Produktgruppe", styles['ChartTitle']))
     elems.append(Spacer(1, 4*mm))
@@ -595,7 +636,7 @@ def make_report():
     for grp in groups:
         elems.append(PageBreak())
 
-        hdr_draw, _ = build_group_header(grp, GROUP_COLORS[grp])
+        hdr_draw, _ = build_group_header(grp, GROUP_COLORS[grp], period_text)
         elems.append(hdr_draw)
         elems.append(Spacer(1, 4*mm))
 
