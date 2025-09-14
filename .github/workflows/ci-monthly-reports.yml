@@ -1,0 +1,30 @@
+
+name: monthly-reports
+on:
+  schedule:
+    - cron: "25 2 1 * *"  # Jeden Monat am 1. um 02:25 UTC
+  workflow_dispatch:
+
+jobs:
+  monthly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          python -m pip install -r requirements.txt reportlab
+      - name: Monthly PDF
+        env:
+          SMARTSHEET_ACCESS_TOKEN: ${{ secrets.SMARTSHEET_ACCESS_TOKEN }}
+        run: |
+          python smartsheet_reports_orchestrator.py monthly
+      - name: Commit & push reports
+        run: |
+          git config user.email "bot@example.com"
+          git config user.name "automation"
+          git add -A reports/monthly
+          git commit -m "Monthly report" || echo "No diff"
+          git push || true
