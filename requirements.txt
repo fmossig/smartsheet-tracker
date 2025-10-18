@@ -1,2 +1,0 @@
-smartsheet-python-sdk
-python-dotenv
