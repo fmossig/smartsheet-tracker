@@ -7,9 +7,9 @@ import logging
 import smartsheet
 from dotenv import load_dotenv
 
-# Set up logging
+# Set up logging - INCREASED VERBOSITY
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Changed from INFO to DEBUG
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("smartsheet_tracker.log"),
@@ -58,8 +58,11 @@ def load_state():
     try:
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, 'r') as f:
-                return json.load(f)
+                state = json.load(f)
+                logger.info(f"Loaded state file with {len(state.get('processed', {}))} processed items")
+                return state
         else:
+            logger.warning(f"State file not found: {STATE_FILE}")
             return {"last_run": None, "processed": {}}
     except Exception as e:
         logger.error(f"Error loading state: {e}")
@@ -70,6 +73,7 @@ def save_state(state):
     try:
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f)
+            logger.info(f"Saved state with {len(state.get('processed', {}))} processed items")
     except Exception as e:
         logger.error(f"Error saving state: {e}")
 
@@ -88,6 +92,9 @@ def ensure_changes_file():
                 "User",
                 "Marketplace"
             ])
+            logger.info(f"Created new changes file: {CHANGES_FILE}")
+    else:
+        logger.info(f"Changes file exists: {CHANGES_FILE}")
 
 def parse_date(date_str):
     """Parse date from string, supporting multiple formats and handling typos."""
@@ -137,6 +144,7 @@ def track_changes():
     
     # Track new changes
     changes_found = 0
+    fields_checked = 0
     
     try:
         # Open file in append mode
@@ -150,10 +158,15 @@ def track_changes():
                 try:
                     # Get sheet with columns and rows
                     sheet = client.Sheets.get_sheet(sheet_id)
+                    logger.info(f"Sheet {group} has {len(sheet.rows)} rows")
                     
                     # Map column titles to IDs
                     col_map = {col.title: col.id for col in sheet.columns}
                     amazon_col_id = col_map.get("Amazon")
+                    
+                    # Log which tracked fields are found
+                    found_fields = [f for f, _, _ in PHASE_FIELDS if f in col_map]
+                    logger.info(f"Found tracked fields in sheet {group}: {found_fields}")
                     
                     # Process each row
                     for row in sheet.rows:
@@ -182,11 +195,18 @@ def track_changes():
                             if not date_val:
                                 continue
                                 
+                            fields_checked += 1
+                            
                             # Create unique key for this specific field
                             field_key = f"{row_key}:{date_col}"
                             
                             # Check if this is a new or changed value
-                            if field_key in state["processed"] and state["processed"][field_key] == date_val:
+                            prev_val = state["processed"].get(field_key)
+                            
+                            # Debug log for comparison
+                            logger.debug(f"Comparing field {field_key}: old='{prev_val}', new='{date_val}'")
+                            
+                            if prev_val == date_val:
                                 continue
                                 
                             # Parse date
@@ -194,6 +214,9 @@ def track_changes():
                             if not parsed_date:
                                 logger.warning(f"Could not parse date: {date_val} for {field_key}")
                                 continue
+                                
+                            # Found a change!
+                            logger.info(f"CHANGE DETECTED in {field_key}: old='{prev_val}', new='{date_val}'")
                                 
                             # Record the change
                             writer.writerow([
@@ -223,7 +246,7 @@ def track_changes():
     state["last_run"] = now.strftime("%Y-%m-%d %H:%M:%S")
     save_state(state)
     
-    logger.info(f"Change tracking completed. Found {changes_found} changes.")
+    logger.info(f"Change tracking completed. Checked {fields_checked} fields, found {changes_found} changes.")
     return True
 
 def bootstrap_tracking(days_back=0):
@@ -306,18 +329,45 @@ def reset_tracking_state():
     logger.info(f"Reset complete: Marked {len(state['processed'])} items as processed")
     return True
 
+def force_sample_change():
+    """Debugging function to force detecting a sample change."""
+    logger.info("Forcing a sample change detection for testing...")
+    
+    # Load current state
+    state = load_state()
+    
+    # Find a key to modify
+    if not state["processed"]:
+        logger.error("No processed items found in state file")
+        return False
+    
+    # Take first key and modify it
+    sample_key = next(iter(state["processed"].keys()))
+    old_val = state["processed"][sample_key]
+    logger.info(f"Selected key for forced change: {sample_key}, current value: {old_val}")
+    
+    # Remove this key from state to force detection
+    del state["processed"][sample_key]
+    save_state(state)
+    
+    logger.info(f"Removed key {sample_key} from state - next tracking run will detect it as a change")
+    return True
+
 if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Track changes in Smartsheet tables")
     parser.add_argument("--bootstrap", action="store_true", help="Initialize tracking for all data")
     parser.add_argument("--reset", action="store_true", help="Reset tracking state to current data")
+    parser.add_argument("--force-change", action="store_true", help="Force detection of a sample change (testing)")
     args = parser.parse_args()
     
     if args.reset:
         success = reset_tracking_state()
     elif args.bootstrap:
         success = bootstrap_tracking()
+    elif args.force_change:
+        success = force_sample_change()
     else:
         success = track_changes()
         
