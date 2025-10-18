@@ -219,23 +219,20 @@ def track_changes():
     logger.info(f"Change tracking completed. Found {changes_found} changes.")
     return True
 
-def bootstrap_tracking(days_back=90):
-    """Initialize tracking for all data within the past X days."""
-    logger.info(f"Starting bootstrap for past {days_back} days")
+# The bootstrap function will initialize the system without historical data
+def bootstrap_tracking():
+    """Initialize tracking without historical data."""
+    logger.info("Starting fresh bootstrap (no historical data)")
     
-    # Reset state to force reprocessing
-    state = {"last_run": None, "processed": {}}
+    # Reset state to start fresh
+    state = {"last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "processed": {}}
     save_state(state)
     
-    # Ensure we have a new changes file
-    if os.path.exists(CHANGES_FILE):
-        # Create backup
-        backup_file = f"{CHANGES_FILE}.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        try:
-            os.rename(CHANGES_FILE, backup_file)
-            logger.info(f"Previous changes file backed up to {backup_file}")
-        except Exception as e:
-            logger.error(f"Failed to backup changes file: {e}")
+    # Create empty changes file
+    ensure_changes_file()
+    
+    logger.info("Bootstrap complete. System ready to track new changes.")
+    return True
     
     # Create new file
     ensure_changes_file()
