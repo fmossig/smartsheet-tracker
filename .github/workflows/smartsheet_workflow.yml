@@ -162,11 +162,18 @@ jobs:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_tracker.py --bootstrap
+          # Create reports directory to avoid git errors
+          mkdir -p reports/weekly reports/monthly
 
       - name: Commit changes
         run: |
           git config user.name 'GitHub Actions'
           git config user.email 'actions@github.com'
-          git add tracking_data/ reports/
+          # Only add tracking_data for bootstrap, both for other actions
+          if [ "${{ github.event.inputs.action }}" == "bootstrap" ]; then
+            git add tracking_data/ reports/
+          else
+            git add tracking_data/ reports/ || true
+          fi
           git commit -m "Manual action: ${{ github.event.inputs.action }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
           git push
