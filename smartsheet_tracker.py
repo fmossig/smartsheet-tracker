@@ -107,22 +107,30 @@ def parse_date(date_str):
     except:
         return None
 
-def track_changes():
-    """Main function to track changes in Smartsheet tables."""
-    logger.info("Starting Smartsheet change tracking")
-    
-    # Initialize
-    state = load_state()
-    ensure_changes_file()
-    
-    # Connect to Smartsheet
+def parse_date(date_str):
+    """Parse date from string, supporting multiple formats and handling typos."""
+    if not date_str:
+        return None
+        
+    # Clean up common typos
+    cleaned = date_str.strip()
+    if cleaned and not cleaned[-1].isdigit():
+        # Remove any trailing non-digit characters
+        cleaned = ''.join([c for i, c in enumerate(cleaned) 
+                          if i < len(cleaned)-1 or c.isdigit()])
+        
+    # Try various formats
+    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d.%m.%Y', '%m/%d/%Y', '%Y/%m/%d'):
+        try:
+            return datetime.strptime(cleaned, fmt).date()
+        except ValueError:
+            continue
+            
     try:
-        client = smartsheet.Smartsheet(token)
-        client.errors_as_exceptions(True)
-        logger.info("Connected to Smartsheet API")
-    except Exception as e:
-        logger.error(f"Failed to connect to Smartsheet: {e}")
-        return False
+        # Try ISO format (catches many variations)
+        return datetime.fromisoformat(cleaned).date()
+    except:
+        return None
     
     # Current timestamp
     now = datetime.now()
