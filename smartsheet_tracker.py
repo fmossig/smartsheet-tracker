@@ -90,24 +90,6 @@ def ensure_changes_file():
             ])
 
 def parse_date(date_str):
-    """Parse date from string, supporting multiple formats."""
-    if not date_str:
-        return None
-        
-    # Try various formats
-    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d.%m.%Y'):
-        try:
-            return datetime.strptime(date_str, fmt).date()
-        except ValueError:
-            continue
-            
-    try:
-        # Try ISO format (catches many variations)
-        return datetime.fromisoformat(date_str).date()
-    except:
-        return None
-
-def parse_date(date_str):
     """Parse date from string, supporting multiple formats and handling typos."""
     if not date_str:
         return None
@@ -131,6 +113,23 @@ def parse_date(date_str):
         return datetime.fromisoformat(cleaned).date()
     except:
         return None
+
+def track_changes():
+    """Main function to track changes in Smartsheet tables."""
+    logger.info("Starting Smartsheet change tracking")
+    
+    # Initialize
+    state = load_state()
+    ensure_changes_file()
+    
+    # Connect to Smartsheet
+    try:
+        client = smartsheet.Smartsheet(token)
+        client.errors_as_exceptions(True)
+        logger.info("Connected to Smartsheet API")
+    except Exception as e:
+        logger.error(f"Failed to connect to Smartsheet: {e}")
+        return False
     
     # Current timestamp
     now = datetime.now()
@@ -227,35 +226,97 @@ def parse_date(date_str):
     logger.info(f"Change tracking completed. Found {changes_found} changes.")
     return True
 
-# The bootstrap function will initialize the system without historical data
-def bootstrap_tracking():
-    """Initialize tracking without historical data."""
-    logger.info("Starting fresh bootstrap (no historical data)")
+def bootstrap_tracking(days_back=0):
+    """Initialize tracking for new data only."""
+    logger.info(f"Starting bootstrap (tracking new data only)")
     
-    # Reset state to start fresh
+    # Reset state to force reprocessing
     state = {"last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "processed": {}}
     save_state(state)
     
-    # Create empty changes file
+    # Ensure we have a new changes file
+    if os.path.exists(CHANGES_FILE):
+        # Create backup
+        backup_file = f"{CHANGES_FILE}.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        try:
+            os.rename(CHANGES_FILE, backup_file)
+            logger.info(f"Previous changes file backed up to {backup_file}")
+        except Exception as e:
+            logger.error(f"Failed to backup changes file: {e}")
+    
+    # Create new file and ensure report directories exist
     ensure_changes_file()
     
-    logger.info("Bootstrap complete. System ready to track new changes.")
+    # Create report directories to avoid git errors
+    os.makedirs("reports/weekly", exist_ok=True)
+    os.makedirs("reports/monthly", exist_ok=True)
+    
+    logger.info("Bootstrap complete. System is ready to track new changes.")
     return True
+
+def reset_tracking_state():
+    """Reset the tracking state to current Smartsheet data."""
+    logger.info("Resetting tracking state...")
     
-    # Create new file
-    ensure_changes_file()
+    # Connect to Smartsheet
+    client = smartsheet.Smartsheet(token)
+    state = {"last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "processed": {}}
     
-    # Run tracking
-    return track_changes()
+    # Process each sheet to build state
+    for group, sid in SHEET_IDS.items():
+        logger.info(f"Processing sheet {group}...")
+        sheet = client.Sheets.get_sheet(sid)
+        
+        # Map column titles to IDs
+        col_map = {col.title: col.id for col in sheet.columns}
+        
+        # Process each row
+        for row in sheet.rows:
+            for date_col, _, _ in PHASE_FIELDS:
+                col_id = col_map.get(date_col)
+                if not col_id:
+                    continue
+                    
+                # Find cell with this column ID
+                for cell in row.cells:
+                    if cell.column_id == col_id and cell.value:
+                        # Add to processed state
+                        field_key = f"{group}:{row.id}:{date_col}"
+                        state["processed"][field_key] = cell.value
+                        break
+    
+    # Save state
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+    
+    # Reset change history file
+    with open(CHANGES_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Timestamp", 
+            "Group", 
+            "RowID",
+            "Phase", 
+            "DateField", 
+            "Date", 
+            "User",
+            "Marketplace"
+        ])
+    
+    logger.info(f"Reset complete: Marked {len(state['processed'])} items as processed")
+    return True
 
 if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Track changes in Smartsheet tables")
     parser.add_argument("--bootstrap", action="store_true", help="Initialize tracking for all data")
+    parser.add_argument("--reset", action="store_true", help="Reset tracking state to current data")
     args = parser.parse_args()
     
-    if args.bootstrap:
+    if args.reset:
+        success = reset_tracking_state()
+    elif args.bootstrap:
         success = bootstrap_tracking()
     else:
         success = track_changes()
