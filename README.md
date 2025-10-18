@@ -306,6 +306,29 @@ All workflows support manual triggering via `workflow_dispatch`.
 ### Employees
 Customizable in `EMP_COLORS` dictionary.
 
+## System Validation
+
+Use the validation script to check if everything is configured correctly:
+
+```bash
+python validate_system.py
+```
+
+This will check:
+- ✅ Dependencies installed
+- ✅ Environment configured (token present)
+- ✅ All scripts are syntactically valid
+- ✅ Required directories exist
+- ✅ Data files are present and valid
+- ✅ Reports have been generated
+- ✅ Automation workflows are configured
+
+**Expected output when properly configured:**
+```
+ALL CHECKS PASSED (7/7)
+System is ready to use!
+```
+
 ## Troubleshooting
 
 ### Issue: "Smartsheet API error"
@@ -325,6 +348,9 @@ Customizable in `EMP_COLORS` dictionary.
 ### Issue: "Permission denied on GitHub Actions"
 - Ensure `SMARTSHEET_TOKEN` secret is set in repository settings
 - Check workflow permissions (needs `contents: write`)
+
+### Issue: Validation script fails
+Run `python validate_system.py` to identify specific issues and follow the recommendations provided.
 
 ## Development
 
