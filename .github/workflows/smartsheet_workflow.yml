@@ -20,113 +20,14 @@ on:
           - weekly-report
           - monthly-report
           - bootstrap
+          - reset
+          - test-changes
 
 permissions:
   contents: write
 
 jobs:
-  daily-tracking:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install smartsheet-python-sdk python-dotenv reportlab
-
-      - name: Run daily tracking
-        env:
-          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
-        run: |
-          python smartsheet_tracker.py
-
-      - name: Commit changes
-        run: |
-          git config user.name 'GitHub Actions'
-          git config user.email 'actions@github.com'
-          
-          # Create reports directory if it doesn't exist
-          mkdir -p reports/weekly reports/monthly
-          
-          # Add only existing files
-          git add tracking_data/
-          git add reports/ || true
-          
-          git commit -m "Manual action: ${{ github.event.inputs.action || 'track' }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
-          git push
-
-  weekly-report:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 1 * * MON'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install smartsheet-python-sdk python-dotenv reportlab
-
-      - name: Generate weekly report
-        env:
-          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
-        run: |
-          python smartsheet_report.py --weekly --previous
-
-      - name: Commit report
-        run: |
-          git config user.name 'GitHub Actions'
-          git config user.email 'actions@github.com'
-          git add reports/
-          git commit -m "Add weekly report $(date +'%Y-%m-%d')" || echo "No changes to commit"
-          git push
-
-  monthly-report:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 2 1 * *'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install smartsheet-python-sdk python-dotenv reportlab
-
-      - name: Generate monthly report
-        env:
-          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
-        run: |
-          python smartsheet_report.py --monthly --previous
-
-      - name: Commit report
-        run: |
-          git config user.name 'GitHub Actions'
-          git config user.email 'actions@github.com'
-          git add reports/
-          git commit -m "Add monthly report $(date +'%Y-%m-%d')" || echo "No changes to commit"
-          git push
-
-  manual-action:
-    if: github.event_name == 'workflow_dispatch'
+  main:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -143,44 +44,64 @@ jobs:
           pip install smartsheet-python-sdk python-dotenv reportlab
 
       - name: Run track
-        if: github.event.inputs.action == 'track'
+        if: github.event.inputs.action == 'track' || github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_tracker.py
 
       - name: Run weekly report
-        if: github.event.inputs.action == 'weekly-report'
+        if: github.event.inputs.action == 'weekly-report' || github.event_name == 'schedule' && github.event.schedule == '0 1 * * MON'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_report.py --weekly --previous
 
       - name: Run monthly report
-        if: github.event.inputs.action == 'monthly-report'
+        if: github.event.inputs.action == 'monthly-report' || github.event_name == 'schedule' && github.event.schedule == '0 2 1 * *'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_report.py --monthly --previous
 
-      - name: Bootstrap
+      - name: Run bootstrap
         if: github.event.inputs.action == 'bootstrap'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_tracker.py --bootstrap
-          # Create reports directory to avoid git errors
-          mkdir -p reports/weekly reports/monthly
+
+      - name: Reset state
+        if: github.event.inputs.action == 'reset'
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: |
+          python smartsheet_tracker.py --reset
+
+      - name: Test changes
+        if: github.event.inputs.action == 'test-changes'
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: |
+          # First modify state to force changes
+          python smartsheet_tracker.py --test
+          # Then run tracking to detect those changes
+          python smartsheet_tracker.py
+
+      - name: Upload log file
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartsheet-logs
+          path: |
+            smartsheet_tracker.log
+            smartsheet_report.log
 
       - name: Commit changes
         run: |
           git config user.name 'GitHub Actions'
           git config user.email 'actions@github.com'
-          # Only add tracking_data for bootstrap, both for other actions
-          if [ "${{ github.event.inputs.action }}" == "bootstrap" ]; then
-            git add tracking_data/ reports/
-          else
-            git add tracking_data/ reports/ || true
-          fi
-          git commit -m "Manual action: ${{ github.event.inputs.action }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
+          mkdir -p reports/weekly reports/monthly
+          git add tracking_data/ reports/
+          git commit -m "${{ github.event.inputs.action || 'track' }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
           git push
