@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta, date
 from collections import defaultdict, Counter
 import logging
+import math
 
 import smartsheet
 from dotenv import load_dotenv
@@ -17,6 +18,7 @@ from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarC
 from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.widgets.markers import makeMarker
 from reportlab.graphics.shapes import Line, Rect
+from reportlab.graphics.shapes import Path, Circle
 
 # Set up logging
 logging.basicConfig(
@@ -479,6 +481,120 @@ def create_horizontal_legend(color_name_pairs, width=500, height=30):
         ))
     
     return drawing
+def query_smartsheet_data():
+    """Query raw Smartsheet data to get activity metrics."""
+    client = smartsheet.Smartsheet(token)
+    
+    # Track counts
+    total_items = 0
+    recent_activity_items = 0
+    thirty_days_ago = datetime.now() - timedelta(days=30)
+    
+    # Process each sheet
+    for group, sheet_id in SHEET_IDS.items():
+        try:
+            # Get the sheet with all rows and columns
+            sheet = client.Sheets.get_sheet(sheet_id)
+            logger.info(f"Processing sheet {group} for activity metrics")
+            
+            # Map column titles to IDs for the phase columns
+            phase_cols = {}
+            for col in sheet.columns:
+                if col.title in ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"]:
+                    phase_cols[col.title] = col.id
+            
+            # Process each row
+            for row in sheet.rows:
+                total_items += 1
+                
+                # Find the most recent date across all phase columns
+                most_recent_date = None
+                
+                for col_title, col_id in phase_cols.items():
+                    for cell in row.cells:
+                        if cell.column_id == col_id and cell.value:
+                            try:
+                                date_val = parse_date(cell.value)
+                                if date_val and (most_recent_date is None or date_val > most_recent_date):
+                                    most_recent_date = date_val
+                            except:
+                                pass
+                
+                # Check if the most recent date is within the last 30 days
+                if most_recent_date and most_recent_date >= thirty_days_ago.date():
+                    recent_activity_items += 1
+                    
+        except Exception as e:
+            logger.error(f"Error processing sheet {group} for metrics: {e}")
+    
+    # Calculate percentage
+    recent_percentage = (recent_activity_items / total_items * 100) if total_items > 0 else 0
+    
+    return {
+        "total_items": total_items,
+        "recent_activity_items": recent_activity_items,
+        "recent_percentage": recent_percentage
+    }
+
+def draw_half_circle_gauge(value_percentage, total_value, label, width=250, height=150, 
+                          color=colors.steelblue, empty_color=colors.lightgrey):
+    """Draw a half-circle gauge chart showing a percentage."""
+    from reportlab.graphics.shapes import Path, Circle
+    import math
+    
+    drawing = Drawing(width, height)
+    
+    # Center of the half-circle
+    cx = width / 2
+    cy = height * 0.2  # Position near the bottom to leave room for labels
+    
+    # Radius of the half-circle
+    radius = min(width, height) * 0.7 / 2
+    
+    # Draw the background (empty) half-circle
+    p = Path()
+    p.moveTo(cx - radius, cy)  # Start at leftmost point
+    p.arcTo(cx - radius, cy - radius, cx + radius, cy + radius, 180, 180)  # Draw 180 degree arc
+    p.lineTo(cx - radius, cy)  # Close the path
+    p.fillColor = empty_color
+    p.strokeColor = colors.grey
+    p.strokeWidth = 1
+    drawing.add(p)
+    
+    # Calculate angle for the filled portion
+    filled_angle = min(180, 180 * value_percentage / 100)
+    
+    # Draw the filled portion
+    if filled_angle > 0:
+        p2 = Path()
+        p2.moveTo(cx, cy)  # Start at center bottom
+        p2.lineTo(cx - radius, cy)  # Line to leftmost point
+        
+        # Draw the arc for the filled portion (reverse direction)
+        end_angle = 180 - filled_angle
+        end_x = cx + radius * math.cos(math.radians(end_angle))
+        end_y = cy + radius * math.sin(math.radians(end_angle))
+        p2.arcTo(cx - radius, cy - radius, cx + radius, cy + radius, 180, -filled_angle)
+        p2.lineTo(cx, cy)  # Back to center
+        p2.fillColor = color
+        p2.strokeColor = colors.black
+        p2.strokeWidth = 0.5
+        drawing.add(p2)
+    
+    # Add labels
+    drawing.add(String(cx, cy + radius * 1.2, label,
+                     fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
+    drawing.add(String(cx, cy - radius * 0.3, f"{value_percentage:.1f}%",
+                     fontName='Helvetica-Bold', fontSize=14, textAnchor='middle'))
+    drawing.add(String(cx, cy - radius * 0.6, f"({total_value} items)",
+                     fontName='Helvetica', fontSize=10, textAnchor='middle'))
+    
+    return drawing
+
+def draw_full_gauge(total_value, label, width=250, height=150, color=colors.steelblue):
+    """Draw a decorative half-circle gauge showing the total count."""
+    # This is essentially draw_half_circle_gauge with 100% value
+    return draw_half_circle_gauge(100, total_value, label, width, height, color)
 
 def create_sample_image(title, message, width=500, height=200):
     """Create a placeholder image with text."""
@@ -583,6 +699,40 @@ def create_weekly_report(start_date, end_date, force=False):
     story.append(chart_table)
     story.append(Spacer(1, 15*mm))
     
+    # Add the gauge charts - side by side
+    story.append(Paragraph("Activity Metrics", heading_style))
+    
+    # Get smartsheet data for gauges
+    try:
+        metrics_data = query_smartsheet_data()
+    
+        # Create both gauge charts
+        recent_gauge = draw_half_circle_gauge(
+            metrics_data["recent_percentage"],
+            metrics_data["recent_activity_items"],
+            "30-Day Activity",
+            color=colors.HexColor("#3498db")
+        )
+    
+        total_gauge = draw_full_gauge(
+            metrics_data["total_items"],
+            "Total Products",
+            color=GROUP_COLORS.get(list(metrics["groups"].keys())[0], colors.HexColor("#2ecc71"))
+            if metrics["groups"] else colors.HexColor("#2ecc71")
+        )
+        
+        # Put them in a table side by side
+        gauge_table_data = [[recent_gauge, total_gauge]]
+        gauge_table = Table(gauge_table_data)
+        story.append(gauge_table)
+    
+    except Exception as e:
+        logger.error(f"Error creating gauge charts: {e}")
+        # Add a placeholder if there's an error
+        story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
+        
+    story.append(Spacer(1, 15*mm))
+        
     # Group detail pages with grouped bar charts
     for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
         if not group:
