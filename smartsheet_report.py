@@ -210,6 +210,7 @@ def get_marketplace_activity(group):
         # Get sheet by group ID
         sheet_id = SHEET_IDS.get(group)
         if not sheet_id:
+            logger.warning(f"Sheet ID not found for group {group}")
             return [], []
             
         sheet = client.Sheets.get_sheet(sheet_id)
@@ -218,16 +219,33 @@ def get_marketplace_activity(group):
         country_col_id = None
         date_cols = {}
         
-        for col in sheet.columns:
-            if col.title in ["Country", "Marketplace", "Land"]:
-                country_col_id = col.id
-            elif col.title in ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"]:
-                date_cols[col.title] = col.id
+        # Log all available column titles for debugging
+        column_titles = [col.title for col in sheet.columns]
+        logger.info(f"Available columns in sheet {group}: {column_titles}")
         
-        if not country_col_id or not date_cols:
-            logger.warning(f"Required columns not found for group {group}")
+        # Search for country/marketplace column with more flexible matching
+        for col in sheet.columns:
+            # More flexible matching for marketplace/country columns
+            if any(keyword in col.title.lower() for keyword in ["country", "marketplace", "land", "market"]):
+                country_col_id = col.id
+                logger.info(f"Found country/marketplace column: {col.title}")
+                break
+                
+        # Search for date columns
+        for col in sheet.columns:
+            if col.title in ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"] or "am" in col.title or "date" in col.title.lower():
+                date_cols[col.title] = col.id
+                
+        if not country_col_id:
+            logger.warning(f"Country/marketplace column not found for group {group}")
             return [], []
             
+        if not date_cols:
+            logger.warning(f"No date columns found for group {group}")
+            return [], []
+            
+        logger.info(f"Found {len(date_cols)} date columns for group {group}")
+        
         # Current date for calculating days since
         current_date = datetime.now().date()
         
@@ -235,7 +253,11 @@ def get_marketplace_activity(group):
         country_data = defaultdict(list)
         
         # Process each row
+        row_count = 0
+        valid_rows = 0
+        
         for row in sheet.rows:
+            row_count += 1
             country = None
             most_recent_date = None
             
@@ -243,6 +265,7 @@ def get_marketplace_activity(group):
             for cell in row.cells:
                 if cell.column_id == country_col_id and cell.value:
                     country = str(cell.value).strip()
+                    break
             
             if not country:
                 continue
@@ -255,13 +278,17 @@ def get_marketplace_activity(group):
                             date_val = parse_date(cell.value)
                             if date_val and (most_recent_date is None or date_val > most_recent_date):
                                 most_recent_date = date_val
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Error parsing date: {e}")
             
             # Calculate days since last activity
             if most_recent_date:
                 days_since = (current_date - most_recent_date).days
                 country_data[country].append(days_since)
+                valid_rows += 1
+        
+        logger.info(f"Processed {row_count} rows in group {group}, found {valid_rows} valid rows with dates")
+        logger.info(f"Found {len(country_data)} unique countries/marketplaces")
         
         # Calculate average days for each country
         country_averages = []
@@ -277,13 +304,23 @@ def get_marketplace_activity(group):
         return most_active, most_inactive
         
     except Exception as e:
-        logger.error(f"Error getting marketplace activity for group {group}: {e}")
+        logger.error(f"Error getting marketplace activity for group {group}: {e}", exc_info=True)
         return [], []
 
 def create_activity_table(activity_data, title):
     """Create a table showing marketplace activity data."""
     if not activity_data:
-        return Paragraph("No data available", ParagraphStyle('NoData', fontName='Helvetica-Italic'))
+        # Instead of using a custom paragraph style with Helvetica-Italic,
+        # create a simple table with a "No data" message
+        table_data = [["No marketplace data available"]]
+        table = Table(table_data, colWidths=[150*mm])
+        table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.lightgrey),
+        ]))
+        return table
     
     # Create table data with header
     table_data = [["Country", "Avg Days Since Activity", "Products"]]
