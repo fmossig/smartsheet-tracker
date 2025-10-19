@@ -55,14 +55,14 @@ jobs:
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
-          python smartsheet_report.py --weekly --previous
+          python smartsheet_report.py --weekly --previous --force
 
       - name: Run monthly report
         if: github.event.inputs.action == 'monthly-report' || github.event_name == 'schedule' && github.event.schedule == '0 2 1 * *'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
-          python smartsheet_report.py --monthly --previous
+          python smartsheet_report.py --monthly --previous --force
 
       - name: Run bootstrap
         if: github.event.inputs.action == 'bootstrap'
