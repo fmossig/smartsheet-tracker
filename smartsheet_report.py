@@ -87,7 +87,7 @@ TOTAL_PRODUCTS = {
     "NH": 893,
     "NP": 394,
     "NT": 119,
-    "NV": 139  # Adding NV with 0 since it wasn't provided
+    "NV": 0  # Adding NV with 0 since it wasn't provided
 }
 
 # User colors (will be generated dynamically)
@@ -739,25 +739,34 @@ def create_weekly_report(start_date, end_date, force=False):
             # Get smartsheet data for gauges filtered by group
             try:
                 metrics_data = query_smartsheet_data(group)
-                    
+                
                 # Get color for this group
                 group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
-                    
+                
+                # Get the fixed total products for this group
+                total_products = TOTAL_PRODUCTS.get(group, 0)
+                
+                # Calculate correct percentage based on fixed product count
+                if total_products > 0:
+                    correct_percentage = (metrics_data["recent_activity_items"] / total_products) * 100
+                else:
+                    correct_percentage = 0
+                
                 # Create both gauge charts with same color
                 recent_gauge = draw_half_circle_gauge(
-                    metrics_data["recent_percentage"],
+                    correct_percentage,  # Use our recalculated percentage
                     metrics_data["recent_activity_items"],
                     "30-Day Activity",
                     color=group_color
                 )
-                    
-                # Use fixed total products value instead of querying
+                
+                # Use fixed total products value
                 total_gauge = draw_full_gauge(
-                    TOTAL_PRODUCTS.get(group, 0),
+                    total_products,
                     "Total Products",
                     color=group_color
                 )
-                    
+                
                 # Put them in a table side by side
                 gauge_table_data = [[recent_gauge, total_gauge]]
                 gauge_table = Table(gauge_table_data)
@@ -901,25 +910,34 @@ def create_monthly_report(year, month, force=False):
             # Get smartsheet data for gauges filtered by group
             try:
                 metrics_data = query_smartsheet_data(group)
-                    
+                
                 # Get color for this group
                 group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
-                    
+                
+                # Get the fixed total products for this group
+                total_products = TOTAL_PRODUCTS.get(group, 0)
+                
+                # Calculate correct percentage based on fixed product count
+                if total_products > 0:
+                    correct_percentage = (metrics_data["recent_activity_items"] / total_products) * 100
+                else:
+                    correct_percentage = 0
+                
                 # Create both gauge charts with same color
                 recent_gauge = draw_half_circle_gauge(
-                    metrics_data["recent_percentage"],
+                    correct_percentage,  # Use our recalculated percentage
                     metrics_data["recent_activity_items"],
                     "30-Day Activity",
                     color=group_color
                 )
-                    
-                # Use fixed total products value instead of querying
+                
+                # Use fixed total products value
                 total_gauge = draw_full_gauge(
-                    TOTAL_PRODUCTS.get(group, 0),
+                    total_products,
                     "Total Products",
                     color=group_color
                 )
-                    
+                
                 # Put them in a table side by side
                 gauge_table_data = [[recent_gauge, total_gauge]]
                 gauge_table = Table(gauge_table_data)
