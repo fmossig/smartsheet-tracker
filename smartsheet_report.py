@@ -482,8 +482,9 @@ def create_horizontal_legend(color_name_pairs, width=500, height=30):
         ))
     
     return drawing
-def query_smartsheet_data():
-    """Query raw Smartsheet data to get activity metrics."""
+
+def query_smartsheet_data(group=None):
+    """Query raw Smartsheet data to get activity metrics, optionally filtered by group."""
     client = smartsheet.Smartsheet(token)
     
     # Track counts
@@ -491,12 +492,20 @@ def query_smartsheet_data():
     recent_activity_items = 0
     thirty_days_ago = datetime.now() - timedelta(days=30)
     
+    # Process sheets
+    if group and group in SHEET_IDS:
+        # Process only the specified group
+        sheet_ids_to_process = {group: SHEET_IDS[group]}
+    else:
+        # Process all groups
+        sheet_ids_to_process = SHEET_IDS
+    
     # Process each sheet
-    for group, sheet_id in SHEET_IDS.items():
+    for sheet_group, sheet_id in sheet_ids_to_process.items():
         try:
             # Get the sheet with all rows and columns
             sheet = client.Sheets.get_sheet(sheet_id)
-            logger.info(f"Processing sheet {group} for activity metrics")
+            logger.info(f"Processing sheet {sheet_group} for activity metrics")
             
             # Map column titles to IDs for the phase columns
             phase_cols = {}
@@ -526,7 +535,7 @@ def query_smartsheet_data():
                     recent_activity_items += 1
                     
         except Exception as e:
-            logger.error(f"Error processing sheet {group} for metrics: {e}")
+            logger.error(f"Error processing sheet {sheet_group} for metrics: {e}")
     
     # Calculate percentage
     recent_percentage = (recent_activity_items / total_items * 100) if total_items > 0 else 0
@@ -683,40 +692,6 @@ def create_weekly_report(start_date, end_date, force=False):
     story.append(chart_table)
     story.append(Spacer(1, 15*mm))
     
-    # Add the gauge charts - side by side
-    story.append(Paragraph("Activity Metrics", heading_style))
-    
-    # Get smartsheet data for gauges
-    try:
-        metrics_data = query_smartsheet_data()
-    
-        # Create both gauge charts
-        recent_gauge = draw_half_circle_gauge(
-            metrics_data["recent_percentage"],
-            metrics_data["recent_activity_items"],
-            "30-Day Activity",
-            color=colors.HexColor("#3498db")
-        )
-    
-        total_gauge = draw_full_gauge(
-            metrics_data["total_items"],
-            "Total Products",
-            color=GROUP_COLORS.get(list(metrics["groups"].keys())[0], colors.HexColor("#2ecc71"))
-            if metrics["groups"] else colors.HexColor("#2ecc71")
-        )
-        
-        # Put them in a table side by side
-        gauge_table_data = [[recent_gauge, total_gauge]]
-        gauge_table = Table(gauge_table_data)
-        story.append(gauge_table)
-    
-    except Exception as e:
-        logger.error(f"Error creating gauge charts: {e}")
-        # Add a placeholder if there's an error
-        story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
-        
-    story.append(Spacer(1, 15*mm))
-        
     # Group detail pages with grouped bar charts
     for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
         if not group:
@@ -745,6 +720,41 @@ def create_weekly_report(start_date, end_date, force=False):
                 for chunk in legend_chunks:
                     legend = create_horizontal_legend(chunk, width=400)
                     story.append(legend)
+                    
+            # Add the gauge charts for this group - side by side
+            story.append(Spacer(1, 15*mm))
+            story.append(Paragraph("Activity Metrics", subheading_style))
+                
+            # Get smartsheet data for gauges filtered by group
+            try:
+                metrics_data = query_smartsheet_data(group)
+                    
+                # Get color for this group
+                group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
+                    
+                # Create both gauge charts with same color
+                recent_gauge = draw_half_circle_gauge(
+                    metrics_data["recent_percentage"],
+                    metrics_data["recent_activity_items"],
+                    "30-Day Activity",
+                    color=group_color
+                )
+                    
+                total_gauge = draw_full_gauge(
+                    metrics_data["total_items"],
+                    "Total Products",
+                    color=group_color
+                )
+                    
+                # Put them in a table side by side
+                gauge_table_data = [[recent_gauge, total_gauge]]
+                gauge_table = Table(gauge_table_data)
+                story.append(gauge_table)
+                    
+            except Exception as e:
+                logger.error(f"Error creating gauge charts for group {group}: {e}")
+                # Add a placeholder if there's an error
+                story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
@@ -842,40 +852,6 @@ def create_monthly_report(year, month, force=False):
     chart_table = Table(chart_table_data)
     story.append(chart_table)
     story.append(Spacer(1, 15*mm))
-
-    # Add the gauge charts - side by side
-    story.append(Paragraph("Activity Metrics", heading_style))
-    
-    # Get smartsheet data for gauges
-    try:
-        metrics_data = query_smartsheet_data()
-    
-        # Create both gauge charts
-        recent_gauge = draw_half_circle_gauge(
-            metrics_data["recent_percentage"],
-            metrics_data["recent_activity_items"],
-            "30-Day Activity",
-            color=colors.HexColor("#3498db")
-        )
-    
-        total_gauge = draw_full_gauge(
-            metrics_data["total_items"],
-            "Total Products",
-            color=GROUP_COLORS.get(list(metrics["groups"].keys())[0], colors.HexColor("#2ecc71"))
-            if metrics["groups"] else colors.HexColor("#2ecc71")
-        )
-        
-        # Put them in a table side by side
-        gauge_table_data = [[recent_gauge, total_gauge]]
-        gauge_table = Table(gauge_table_data)
-        story.append(gauge_table)
-    
-    except Exception as e:
-        logger.error(f"Error creating gauge charts: {e}")
-        # Add a placeholder if there's an error
-        story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
-        
-    story.append(Spacer(1, 15*mm))
     
     # Group detail pages with grouped bar charts
     for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
@@ -905,6 +881,41 @@ def create_monthly_report(year, month, force=False):
                 for chunk in legend_chunks:
                     legend = create_horizontal_legend(chunk, width=400)
                     story.append(legend)
+                
+            # Add the gauge charts for this group - side by side
+            story.append(Spacer(1, 15*mm))
+            story.append(Paragraph("Activity Metrics", subheading_style))
+                
+            # Get smartsheet data for gauges filtered by group
+            try:
+                metrics_data = query_smartsheet_data(group)
+                    
+                # Get color for this group
+                group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
+                    
+                # Create both gauge charts with same color
+                recent_gauge = draw_half_circle_gauge(
+                    metrics_data["recent_percentage"],
+                    metrics_data["recent_activity_items"],
+                    "30-Day Activity",
+                    color=group_color
+                )
+                    
+                total_gauge = draw_full_gauge(
+                    metrics_data["total_items"],
+                    "Total Products",
+                    color=group_color
+                )
+                    
+                # Put them in a table side by side
+                gauge_table_data = [[recent_gauge, total_gauge]]
+                gauge_table = Table(gauge_table_data)
+                story.append(gauge_table)
+                    
+            except Exception as e:
+                logger.error(f"Error creating gauge charts for group {group}: {e}")
+                # Add a placeholder if there's an error
+                story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
