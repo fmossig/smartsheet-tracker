@@ -199,6 +199,112 @@ def collect_metrics(changes):
             
     return metrics
 
+def get_marketplace_activity(group):
+    """
+    For a specific group, calculate average days since last activity for each marketplace/country.
+    Returns two lists: most active and most inactive marketplaces.
+    """
+    client = smartsheet.Smartsheet(token)
+    
+    try:
+        # Get sheet by group ID
+        sheet_id = SHEET_IDS.get(group)
+        if not sheet_id:
+            return [], []
+            
+        sheet = client.Sheets.get_sheet(sheet_id)
+        
+        # Find the country/marketplace column and date columns
+        country_col_id = None
+        date_cols = {}
+        
+        for col in sheet.columns:
+            if col.title in ["Country", "Marketplace", "Land"]:
+                country_col_id = col.id
+            elif col.title in ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"]:
+                date_cols[col.title] = col.id
+        
+        if not country_col_id or not date_cols:
+            logger.warning(f"Required columns not found for group {group}")
+            return [], []
+            
+        # Current date for calculating days since
+        current_date = datetime.now().date()
+        
+        # Dictionary to collect country activity data
+        country_data = defaultdict(list)
+        
+        # Process each row
+        for row in sheet.rows:
+            country = None
+            most_recent_date = None
+            
+            # Get the country/marketplace
+            for cell in row.cells:
+                if cell.column_id == country_col_id and cell.value:
+                    country = str(cell.value).strip()
+            
+            if not country:
+                continue
+                
+            # Find the most recent date across all date columns
+            for col_name, col_id in date_cols.items():
+                for cell in row.cells:
+                    if cell.column_id == col_id and cell.value:
+                        try:
+                            date_val = parse_date(cell.value)
+                            if date_val and (most_recent_date is None or date_val > most_recent_date):
+                                most_recent_date = date_val
+                        except:
+                            pass
+            
+            # Calculate days since last activity
+            if most_recent_date:
+                days_since = (current_date - most_recent_date).days
+                country_data[country].append(days_since)
+        
+        # Calculate average days for each country
+        country_averages = []
+        for country, days_list in country_data.items():
+            if days_list:  # Make sure we have data
+                avg_days = sum(days_list) / len(days_list)
+                country_averages.append((country, avg_days, len(days_list)))
+        
+        # Sort by average days (ascending for most active, descending for most inactive)
+        most_active = sorted(country_averages, key=lambda x: x[1])[:5]  # Lowest average days
+        most_inactive = sorted(country_averages, key=lambda x: x[1], reverse=True)[:5]  # Highest average days
+        
+        return most_active, most_inactive
+        
+    except Exception as e:
+        logger.error(f"Error getting marketplace activity for group {group}: {e}")
+        return [], []
+
+def create_activity_table(activity_data, title):
+    """Create a table showing marketplace activity data."""
+    if not activity_data:
+        return Paragraph("No data available", ParagraphStyle('NoData', fontName='Helvetica-Italic'))
+    
+    # Create table data with header
+    table_data = [["Country", "Avg Days Since Activity", "Products"]]
+    
+    # Add data rows
+    for country, avg_days, count in activity_data:
+        table_data.append([country, f"{avg_days:.1f}", str(count)])
+    
+    # Create the table
+    table = Table(table_data, colWidths=[80*mm, 40*mm, 30*mm])
+    
+    # Style the table
+    table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('ALIGN', (1,0), (2,-1), 'RIGHT'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+    ]))
+    
+    return table
+
 # Update the generate_user_colors function to use your custom colors
 def generate_user_colors(users):
     """Generate consistent colors for users with custom colors for specific users."""
@@ -771,6 +877,24 @@ def create_weekly_report(start_date, end_date, force=False):
                 gauge_table_data = [[recent_gauge, total_gauge]]
                 gauge_table = Table(gauge_table_data)
                 story.append(gauge_table)
+                
+                # Add marketplace activity metrics after the gauge charts
+                story.append(Spacer(1, 15*mm))
+                story.append(Paragraph("Marketplace Activity", subheading_style))
+                
+                # Get marketplace activity data
+                most_active, most_inactive = get_marketplace_activity(group)
+                
+                # Create a table for most active marketplaces
+                story.append(Paragraph("Most Active Marketplaces", subheading_style))
+                active_table = create_activity_table(most_active, "Most Active")
+                story.append(active_table)
+                story.append(Spacer(1, 5*mm))
+                
+                # Create a table for most inactive marketplaces
+                story.append(Paragraph("Most Inactive Marketplaces", subheading_style))
+                inactive_table = create_activity_table(most_inactive, "Most Inactive")
+                story.append(inactive_table)
                     
             except Exception as e:
                 logger.error(f"Error creating gauge charts for group {group}: {e}")
@@ -919,123 +1043,4 @@ def create_monthly_report(year, month, force=False):
                 
                 # Calculate correct percentage based on fixed product count
                 if total_products > 0:
-                    correct_percentage = (metrics_data["recent_activity_items"] / total_products) * 100
-                else:
-                    correct_percentage = 0
-                
-                # Create both gauge charts with same color
-                recent_gauge = draw_half_circle_gauge(
-                    correct_percentage,  # Use our recalculated percentage
-                    metrics_data["recent_activity_items"],
-                    "30-Day Activity",
-                    color=group_color
-                )
-                
-                # Use fixed total products value
-                total_gauge = draw_full_gauge(
-                    total_products,
-                    "Total Products",
-                    color=group_color
-                )
-                
-                # Put them in a table side by side
-                gauge_table_data = [[recent_gauge, total_gauge]]
-                gauge_table = Table(gauge_table_data)
-                story.append(gauge_table)
-                    
-            except Exception as e:
-                logger.error(f"Error creating gauge charts for group {group}: {e}")
-                # Add a placeholder if there's an error
-                story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
-        else:
-            story.append(Paragraph("No detailed data available for this group", normal_style))
-    
-    # Build the PDF
-    doc.build(story)
-    logger.info(f"Monthly report created: {filename}")
-    return filename
-
-def get_previous_week():
-    """Get the start and end dates for the previous week (Monday to Sunday)."""
-    today = date.today()
-    previous_week_end = today - timedelta(days=today.weekday() + 1)
-    previous_week_start = previous_week_end - timedelta(days=6)
-    return previous_week_start, previous_week_end
-
-def get_current_week():
-    """Get the start and end dates for the current week (Monday to today)."""
-    today = date.today()
-    start = today - timedelta(days=today.weekday())  # Monday
-    end = today
-    return start, end
-
-def get_previous_month():
-    """Get the year and month for the previous month."""
-    today = date.today()
-    if today.month == 1:
-        return today.year - 1, 12
-    else:
-        return today.year, today.month - 1
-
-def get_current_month():
-    """Get the year and month for the current month."""
-    today = date.today()
-    return today.year, today.month
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Generate Smartsheet change reports")
-    report_type = parser.add_mutually_exclusive_group(required=True)
-    report_type.add_argument("--weekly", action="store_true", help="Generate weekly report")
-    report_type.add_argument("--monthly", action="store_true", help="Generate monthly report")
-    
-    parser.add_argument("--year", type=int, help="Year for report (defaults to current year)")
-    parser.add_argument("--month", type=int, help="Month number for monthly report")
-    parser.add_argument("--week", type=int, help="ISO week number for weekly report")
-    parser.add_argument("--previous", action="store_true", help="Generate report for previous week/month")
-    parser.add_argument("--current", action="store_true", help="Generate report for current week/month to date")
-    parser.add_argument("--force", action="store_true", help="Force report generation even with no data")
-    
-    args = parser.parse_args()
-    
-    try:
-        if args.weekly:
-            if args.previous:
-                start_date, end_date = get_previous_week()
-                filename = create_weekly_report(start_date, end_date, force=args.force)
-            elif args.current:
-                start_date, end_date = get_current_week()
-                filename = create_weekly_report(start_date, end_date, force=args.force)
-            elif args.year and args.week:
-                # Calculate date from ISO week
-                start_date = datetime.fromisocalendar(args.year, args.week, 1).date()
-                end_date = start_date + timedelta(days=6)
-                filename = create_weekly_report(start_date, end_date, force=args.force)
-            else:
-                logger.error("For weekly reports, specify --previous OR --current OR (--year and --week)")
-                exit(1)
-                
-        elif args.monthly:
-            if args.previous:
-                year, month = get_previous_month()
-                filename = create_monthly_report(year, month, force=args.force)
-            elif args.current:
-                year, month = get_current_month()
-                filename = create_monthly_report(year, month, force=args.force)
-            elif args.year and args.month:
-                filename = create_monthly_report(args.year, args.month, force=args.force)
-            else:
-                logger.error("For monthly reports, specify --previous OR --current OR (--year and --month)")
-                exit(1)
-                
-        if filename:
-            logger.info(f"Report successfully generated: {filename}")
-            exit(0)
-        else:
-            logger.warning("Report generation completed but no file was created")
-            exit(1)
-            
-    except Exception as e:
-        logger.error(f"Error generating report: {e}", exc_info=True)
-        exit(1)
+                    correct_percentage = (metrics_data["recent
