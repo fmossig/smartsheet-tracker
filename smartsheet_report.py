@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.graphics.shapes import Drawing, String, Rect
+from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.piecharts import Pie
 
@@ -138,6 +138,15 @@ def collect_metrics(changes):
         "group_phase": defaultdict(lambda: defaultdict(int))
     }
     
+    # Add sample data if no changes
+    if not changes:
+        # Sample data for empty report
+        metrics["groups"] = {"NA": 5, "NF": 3, "NH": 2}
+        metrics["phases"] = {"1": 3, "2": 4, "3": 2, "4": 1}
+        metrics["users"] = {"Sample User 1": 5, "Sample User 2": 3, "Sample User 3": 2}
+        metrics["marketplaces"] = {"DE": 4, "FR": 3, "UK": 2, "ES": 1}
+        return metrics
+    
     for change in changes:
         group = change.get('Group', '')
         phase = change.get('Phase', '')
@@ -177,12 +186,17 @@ def make_pie_chart(data_dict, title, width=400, height=200):
     # Prepare data
     labels = []
     data = []
+    
+    # If data is empty, add sample data
+    if not data_dict:
+        data_dict = {"Sample": 1}
+        
     for key, value in data_dict.items():
         if value > 0:  # Only include non-zero values
             labels.append(str(key))
             data.append(value)
     
-    # If no data, add a placeholder
+    # If still no data, add a placeholder
     if not data:
         labels = ['No Data']
         data = [1]
@@ -205,6 +219,10 @@ def make_bar_chart(data_dict, title, width=500, height=250):
     drawing.add(String(width/2, height-15, title,
                       fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
     
+    # If data is empty, add sample data
+    if not data_dict:
+        data_dict = {"Sample": 1}
+    
     # Create the bar chart
     chart = VerticalBarChart()
     chart.x = 50
@@ -218,6 +236,26 @@ def make_bar_chart(data_dict, title, width=500, height=250):
     drawing.add(chart)
     return drawing
 
+def create_sample_image(title, message, width=500, height=200):
+    """Create a placeholder image with text."""
+    from reportlab.lib.colors import lightgrey, black
+    from reportlab.graphics.shapes import Rect
+    
+    drawing = Drawing(width, height)
+    
+    # Add a background rectangle
+    drawing.add(Rect(0, 0, width, height, fillColor=lightgrey))
+    
+    # Add title
+    drawing.add(String(width/2, height-30, title,
+                     fontName='Helvetica-Bold', fontSize=14, textAnchor='middle'))
+    
+    # Add message
+    drawing.add(String(width/2, height/2, message,
+                     fontName='Helvetica', fontSize=12, textAnchor='middle'))
+    
+    return drawing
+
 def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
     # Generate output filename
@@ -229,21 +267,15 @@ def create_weekly_report(start_date, end_date, force=False):
     # Load changes for the week
     changes = load_changes(start_date, end_date)
     
+    # Check if we have data
+    has_data = len(changes) > 0
+    
     # If no changes and not forcing, return None
     if not changes and not force:
         logger.warning(f"No changes found for week {week_str}")
-        
-        # If no changes for the specified week, try loading all changes
-        all_changes = load_changes()
-        if not all_changes:
-            logger.warning("No changes found in history file at all")
-            return None
-        
-        # Use most recent changes instead
-        changes = all_changes
-        logger.info(f"Using {len(changes)} changes from entire history instead")
+        return None
     
-    # Collect metrics
+    # Collect metrics (will use sample data if no changes)
     metrics = collect_metrics(changes)
     
     # Create PDF document
@@ -262,12 +294,11 @@ def create_weekly_report(start_date, end_date, force=False):
     # Title
     story.append(Paragraph(f"Weekly Smartsheet Changes Report", title_style))
     
-    # If we're using all data instead of just the specified week
-    if not start_date or not end_date or len(load_changes(start_date, end_date)) == 0:
-        # Format for "all time" report
-        story.append(Paragraph(f"All Available Data (Sample Report)", normal_style))
+    # Period information
+    if not has_data:
+        story.append(Paragraph(f"Period: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}", normal_style))
+        story.append(Paragraph(f"<i>Sample report - no data available for this period</i>", normal_style))
     else:
-        # Format for normal weekly report
         story.append(Paragraph(f"Period: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}", normal_style))
     
     story.append(Spacer(1, 10*mm))
@@ -291,24 +322,36 @@ def create_weekly_report(start_date, end_date, force=False):
     
     # Group activity
     story.append(Paragraph("Activity by Product Group", heading_style))
-    story.append(make_pie_chart(metrics["groups"], "Changes by Group"))
+    if not has_data:
+        story.append(create_sample_image("Product Group Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        story.append(make_pie_chart(metrics["groups"], "Changes by Group"))
     story.append(Spacer(1, 5*mm))
     
     # Phase activity
     story.append(Paragraph("Activity by Phase", heading_style))
-    story.append(make_pie_chart(metrics["phases"], "Changes by Phase"))
+    if not has_data:
+        story.append(create_sample_image("Phase Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        story.append(make_pie_chart(metrics["phases"], "Changes by Phase"))
     story.append(Spacer(1, 5*mm))
     
     # Most active users
     story.append(Paragraph("Most Active Users", heading_style))
-    top_users = dict(sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:10])
-    story.append(make_bar_chart(top_users, "Top 10 Users by Activity"))
+    if not has_data:
+        story.append(create_sample_image("User Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        top_users = dict(sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:10])
+        story.append(make_bar_chart(top_users, "Top 10 Users by Activity"))
     story.append(Spacer(1, 5*mm))
     
     # Most active marketplaces
     story.append(Paragraph("Most Active Marketplaces", heading_style))
-    top_markets = dict(sorted(metrics["marketplaces"].items(), key=lambda x: x[1], reverse=True)[:10])
-    story.append(make_bar_chart(top_markets, "Top 10 Marketplaces by Activity"))
+    if not has_data:
+        story.append(create_sample_image("Marketplace Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        top_markets = dict(sorted(metrics["marketplaces"].items(), key=lambda x: x[1], reverse=True)[:10])
+        story.append(make_bar_chart(top_markets, "Top 10 Marketplaces by Activity"))
     
     # Build the PDF
     doc.build(story)
@@ -333,21 +376,15 @@ def create_monthly_report(year, month, force=False):
     # Load changes for the month
     changes = load_changes(start_date, end_date)
     
-    # If no changes and not forcing, try all data
+    # Check if we have data
+    has_data = len(changes) > 0
+    
+    # If no changes and not forcing, return None
     if not changes and not force:
         logger.warning(f"No changes found for month {month_str}")
-        
-        # If no changes for the specified month, try loading all changes
-        all_changes = load_changes()
-        if not all_changes:
-            logger.warning("No changes found in history file at all")
-            return None
-        
-        # Use most recent changes instead
-        changes = all_changes
-        logger.info(f"Using {len(changes)} changes from entire history instead")
+        return None
     
-    # Collect metrics
+    # Collect metrics (will use sample data if no changes)
     metrics = collect_metrics(changes)
     
     # Create PDF document
@@ -367,12 +404,11 @@ def create_monthly_report(year, month, force=False):
     # Title
     story.append(Paragraph(f"Monthly Smartsheet Changes Report", title_style))
     
-    # If we're using all data instead of just the specified month
-    if not start_date or not end_date or len(load_changes(start_date, end_date)) == 0:
-        # Format for "all time" report
-        story.append(Paragraph(f"All Available Data (Sample Report)", normal_style))
+    # Period information
+    if not has_data:
+        story.append(Paragraph(f"Period: {start_date.strftime('%B %Y')}", normal_style))
+        story.append(Paragraph(f"<i>Sample report - no data available for this period</i>", normal_style))
     else:
-        # Format for normal monthly report
         story.append(Paragraph(f"Period: {start_date.strftime('%B %Y')}", normal_style))
     
     story.append(Spacer(1, 10*mm))
@@ -396,43 +432,64 @@ def create_monthly_report(year, month, force=False):
     
     # Group activity
     story.append(Paragraph("Activity by Product Group", heading_style))
-    story.append(make_pie_chart(metrics["groups"], "Changes by Group"))
+    if not has_data:
+        story.append(create_sample_image("Product Group Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        story.append(make_pie_chart(metrics["groups"], "Changes by Group"))
     story.append(Spacer(1, 5*mm))
     
     # Phase activity
     story.append(Paragraph("Activity by Phase", heading_style))
-    story.append(make_pie_chart(metrics["phases"], "Changes by Phase"))
+    if not has_data:
+        story.append(create_sample_image("Phase Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        story.append(make_pie_chart(metrics["phases"], "Changes by Phase"))
     story.append(Spacer(1, 5*mm))
     
     # Most active users
     story.append(Paragraph("Most Active Users", heading_style))
-    top_users = dict(sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:10])
-    story.append(make_bar_chart(top_users, "Top 10 Users by Activity"))
+    if not has_data:
+        story.append(create_sample_image("User Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        top_users = dict(sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:10])
+        story.append(make_bar_chart(top_users, "Top 10 Users by Activity"))
     story.append(Spacer(1, 5*mm))
     
     # Most active marketplaces
     story.append(PageBreak())
     story.append(Paragraph("Most Active Marketplaces", heading_style))
-    top_markets = dict(sorted(metrics["marketplaces"].items(), key=lambda x: x[1], reverse=True)[:10])
-    story.append(make_bar_chart(top_markets, "Top 10 Marketplaces by Activity"))
+    if not has_data:
+        story.append(create_sample_image("Marketplace Activity", "Sample data shown - no actual changes in this period"))
+    else:
+        top_markets = dict(sorted(metrics["marketplaces"].items(), key=lambda x: x[1], reverse=True)[:10])
+        story.append(make_bar_chart(top_markets, "Top 10 Marketplaces by Activity"))
     story.append(Spacer(1, 10*mm))
     
     # Group detail pages
     story.append(PageBreak())
     story.append(Paragraph("Product Group Details", heading_style))
     
-    for group, count in sorted(metrics["groups"].items(), key=lambda x: x[1], reverse=True):
-        if not group:
-            continue
-            
-        story.append(Spacer(1, 5*mm))
-        story.append(Paragraph(f"Group {group}", subheading_style))
-        
-        # Phase distribution for this group
-        phase_data = metrics["group_phase"].get(group, {})
-        if phase_data:
-            story.append(make_pie_chart(phase_data, f"Phase Distribution for {group}"))
+    if not has_data:
+        # Add sample group details
+        for group in ["NA", "NF", "NH"]:
             story.append(Spacer(1, 5*mm))
+            story.append(Paragraph(f"Group {group}", subheading_style))
+            story.append(create_sample_image(f"Group {group} Activity", "Sample data shown - no actual changes in this period"))
+            story.append(Spacer(1, 5*mm))
+    else:
+        # Add real group details
+        for group, count in sorted(metrics["groups"].items(), key=lambda x: x[1], reverse=True):
+            if not group:
+                continue
+                
+            story.append(Spacer(1, 5*mm))
+            story.append(Paragraph(f"Group {group}", subheading_style))
+            
+            # Phase distribution for this group
+            phase_data = metrics["group_phase"].get(group, {})
+            if phase_data:
+                story.append(make_pie_chart(phase_data, f"Phase Distribution for {group}"))
+                story.append(Spacer(1, 5*mm))
     
     # Build the PDF
     doc.build(story)
