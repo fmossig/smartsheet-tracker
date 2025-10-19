@@ -19,6 +19,7 @@ from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.widgets.markers import makeMarker
 from reportlab.graphics.shapes import Line, Rect
 from reportlab.graphics.shapes import Path, Circle
+from reportlab.graphics.shapes import Wedge
 
 # Set up logging
 logging.basicConfig(
