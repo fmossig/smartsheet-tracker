@@ -306,7 +306,7 @@ def make_phase_bar_chart(data_dict, title, width=250, height=200):
     return drawing
 
 def make_group_detail_chart(group, phase_user_data, title, width=500, height=300):
-    """Create a horizontal grouped bar chart (not stacked) showing user contributions per phase."""
+    """Create a horizontal stacked bar chart showing user contributions per phase."""
     drawing = Drawing(width, height)
     
     # Add title
@@ -332,44 +332,37 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
     chart.height = 200
     chart.width = 350
     
-    # Prepare data for grouped bars
+    # Prepare data for stacked bars
+    # For stacked bars, each data series is one user across all phases
     data = []
-    for phase in phases:
-        phase_data = []
-        for user in all_users:
-            phase_data.append(phase_user_data.get(phase, {}).get(user, 0))
-        data.append(phase_data)
+    for user in all_users:
+        user_data = []
+        for phase in phases:
+            user_data.append(phase_user_data.get(phase, {}).get(user, 0))
+        data.append(user_data)
     
-    # Transpose data for horizontal chart
-    transposed_data = []
-    for i in range(len(all_users)):
-        user_row = [data[j][i] for j in range(len(phases))]
-        transposed_data.append(user_row)
-    
-    # Set the data - each row is a user's data across phases
-    chart.data = transposed_data
+    # Set the data
+    chart.data = data
     
     # Use phase names for categories
     chart.categoryAxis.categoryNames = [PHASE_NAMES.get(p, f"Phase {p}") for p in phases]
     chart.categoryAxis.labels.fontSize = 10
     
-    # Set bar spacing to create groups
-    chart.groupSpacing = 10
-    chart.barSpacing = 2
-    chart.barWidth = 10
+    # Set proper stacking mode
+    chart.barWidth = 15
+    chart.valueAxis.valueMin = 0
     
-    # Value axis
+    # Calculate maximum total for value axis
     max_total = 0
     for phase in phases:
         phase_total = sum(phase_user_data.get(phase, {}).values())
         if phase_total > max_total:
             max_total = phase_total
     
-    chart.valueAxis.valueMin = 0
     chart.valueAxis.valueMax = max_total * 1.1 if max_total else 10
     chart.valueAxis.valueStep = max(1, int(max_total / 5)) if max_total else 2
     
-    # Set colors for each user's bars
+    # Set colors for each user's portion of the stacked bars
     for i, user in enumerate(all_users):
         chart.bars[i].fillColor = user_colors.get(user, colors.steelblue)
     
