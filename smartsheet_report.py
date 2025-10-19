@@ -340,7 +340,7 @@ def create_activity_table(activity_data, title):
         # Instead of using a custom paragraph style with Helvetica-Italic,
         # create a simple table with a "No data" message
         table_data = [["No marketplace data available"]]
-        table = Table(table_data, colWidths=[150*mm])
+        table = Table(table_data, colWidths=[70*mm])  # Reduced width
         table.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
@@ -349,15 +349,15 @@ def create_activity_table(activity_data, title):
         ]))
         return table
     
-    # Create table data with header
-    table_data = [["Country", "Avg Days Since Activity", "Products"]]
+    # Create table data with header - SHORTENED HEADERS
+    table_data = [["Country", "Avg Days", "Products"]]  # Shorter header text
     
     # Add data rows
     for country, avg_days, count in activity_data:
         table_data.append([country, f"{avg_days:.1f}", str(count)])
     
-    # Create the table
-    table = Table(table_data, colWidths=[80*mm, 40*mm, 30*mm])
+    # Create the table with REDUCED COLUMN WIDTHS
+    table = Table(table_data, colWidths=[40*mm, 20*mm, 15*mm])  # Narrower columns
     
     # Style the table
     table.setStyle(TableStyle([
@@ -365,6 +365,7 @@ def create_activity_table(activity_data, title):
         ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
         ('ALIGN', (1,0), (2,-1), 'RIGHT'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 8),  # Reduced font size
     ]))
     
     return table
@@ -975,13 +976,17 @@ def create_weekly_report(start_date, end_date, force=False):
                 active_table = create_activity_table(most_active, "Most Active")
                 inactive_table = create_activity_table(most_inactive, "Most Inactive")
                 
-                # Place tables side by side
+                # Place tables side by side with FIXED WIDTHS to prevent overflow
                 marketplace_table_data = [
-                    [Paragraph("Most Active Marketplaces", subheading_style), 
-                     Paragraph("Most Inactive Marketplaces", subheading_style)],
+                    [Paragraph("Most Active", subheading_style), 
+                     Paragraph("Most Inactive", subheading_style)],
                     [active_table, inactive_table]
                 ]
-                marketplace_table = Table(marketplace_table_data)
+                marketplace_table = Table(marketplace_table_data, colWidths=[75*mm, 75*mm])  # Fixed column widths
+                marketplace_table.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ('ALIGN', (0,0), (-1,0), 'CENTER'),
+                ]))
                 story.append(marketplace_table)
                     
             except Exception as e:
@@ -1188,13 +1193,17 @@ def create_monthly_report(year, month, force=False):
                 active_table = create_activity_table(most_active, "Most Active")
                 inactive_table = create_activity_table(most_inactive, "Most Inactive")
                 
-                # Place tables side by side
+                # Place tables side by side with FIXED WIDTHS to prevent overflow
                 marketplace_table_data = [
-                    [Paragraph("Most Active Marketplaces", subheading_style), 
-                     Paragraph("Most Inactive Marketplaces", subheading_style)],
+                    [Paragraph("Most Active", subheading_style), 
+                     Paragraph("Most Inactive", subheading_style)],
                     [active_table, inactive_table]
                 ]
-                marketplace_table = Table(marketplace_table_data)
+                marketplace_table = Table(marketplace_table_data, colWidths=[75*mm, 75*mm])  # Fixed column widths
+                marketplace_table.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ('ALIGN', (0,0), (-1,0), 'CENTER'),
+                ]))
                 story.append(marketplace_table)
                     
             except Exception as e:
