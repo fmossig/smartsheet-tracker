@@ -16,6 +16,7 @@ from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarChart
 from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.widgets.markers import makeMarker
+from reportlab.graphics.shapes import Line, Rect
 
 # Set up logging
 logging.basicConfig(
@@ -307,6 +308,8 @@ def make_phase_bar_chart(data_dict, title, width=250, height=200):
 
 def make_group_detail_chart(group, phase_user_data, title, width=500, height=300):
     """Create a horizontal stacked bar chart showing user contributions per phase."""
+    from reportlab.graphics.shapes import Rect
+    
     drawing = Drawing(width, height)
     
     # Add title
@@ -325,50 +328,109 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
     # Generate consistent colors for users
     user_colors = generate_user_colors({user: 1 for user in all_users})
     
-    # Create the bar chart
-    chart = HorizontalBarChart()
-    chart.x = 100  # More space for phase labels
-    chart.y = 50
-    chart.height = 200
-    chart.width = 350
+    # Chart dimensions
+    chart_x = 120
+    chart_y = 50
+    chart_width = 320
+    chart_height = 200
+    bar_height = 20
+    spacing = 10
     
-    # Prepare data for stacked bars
-    # For stacked bars, each data series is one user across all phases
-    data = []
-    for user in all_users:
-        user_data = []
-        for phase in phases:
-            user_data.append(phase_user_data.get(phase, {}).get(user, 0))
-        data.append(user_data)
-    
-    # Set the data
-    chart.data = data
-    
-    # Use phase names for categories
-    chart.categoryAxis.categoryNames = [PHASE_NAMES.get(p, f"Phase {p}") for p in phases]
-    chart.categoryAxis.labels.fontSize = 10
-    
-    # Set proper stacking mode
-    chart.barWidth = 15
-    chart.valueAxis.valueMin = 0
-    
-    # Calculate maximum total for value axis
-    max_total = 0
+    # Calculate maximum total for scale
+    max_total = 1  # Minimum value to avoid division by zero
     for phase in phases:
         phase_total = sum(phase_user_data.get(phase, {}).values())
         if phase_total > max_total:
             max_total = phase_total
     
-    chart.valueAxis.valueMax = max_total * 1.1 if max_total else 10
-    chart.valueAxis.valueStep = max(1, int(max_total / 5)) if max_total else 2
+    # Draw each phase as a stacked bar
+    for i, phase in enumerate(phases):
+        y_position = chart_y + (bar_height + spacing) * i
+        
+        # Add phase label
+        drawing.add(String(
+            chart_x - 10, 
+            y_position + bar_height/2, 
+            PHASE_NAMES.get(phase, f"Phase {phase}"),
+            fontName='Helvetica', 
+            fontSize=10, 
+            textAnchor='end'
+        ))
+        
+        # Get user data for this phase
+        phase_data = phase_user_data.get(phase, {})
+        
+        # Calculate total for this phase
+        phase_total = sum(phase_data.values())
+        
+        # Starting position for first segment
+        x_start = chart_x
+        
+        # Draw each user's contribution as a colored segment
+        for user in all_users:
+            value = phase_data.get(user, 0)
+            if value > 0:
+                # Calculate width of this segment proportional to its value
+                segment_width = (value / max_total) * chart_width
+                
+                # Draw segment
+                rect = Rect(
+                    x_start, 
+                    y_position, 
+                    segment_width, 
+                    bar_height, 
+                    fillColor=user_colors.get(user, colors.steelblue),
+                    strokeColor=colors.black,
+                    strokeWidth=0.5
+                )
+                drawing.add(rect)
+                
+                # Add value label if segment is wide enough
+                if segment_width > 20:
+                    drawing.add(String(
+                        x_start + segment_width/2,
+                        y_position + bar_height/2,
+                        str(value),
+                        fontName='Helvetica',
+                        fontSize=8,
+                        textAnchor='middle'
+                    ))
+                
+                # Move x position for next segment
+                x_start += segment_width
     
-    # Set colors for each user's portion of the stacked bars
-    for i, user in enumerate(all_users):
-        chart.bars[i].fillColor = user_colors.get(user, colors.steelblue)
+    # Draw axis line
+    drawing.add(Line(
+        chart_x, chart_y - 10,
+        chart_x + chart_width, chart_y - 10,
+        strokeWidth=1,
+        strokeColor=colors.black
+    ))
     
-    drawing.add(chart)
+    # Add scale markers
+    scale_steps = 5
+    for i in range(scale_steps + 1):
+        x_pos = chart_x + (i / scale_steps) * chart_width
+        value = int((i / scale_steps) * max_total)
+        
+        # Tick mark
+        drawing.add(Line(
+            x_pos, chart_y - 10,
+            x_pos, chart_y - 15,
+            strokeWidth=1,
+            strokeColor=colors.black
+        ))
+        
+        # Value label
+        drawing.add(String(
+            x_pos, chart_y - 25,
+            str(value),
+            fontName='Helvetica',
+            fontSize=8,
+            textAnchor='middle'
+        ))
     
-    # Return the chart and legend data separately
+    # Return the chart and legend data
     return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
     
 def create_horizontal_legend(color_name_pairs, width=500, height=30):
