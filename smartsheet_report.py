@@ -1,4 +1,4 @@
-import os
+Fimport os
 import csv
 import json
 from datetime import datetime, timedelta, date
@@ -539,8 +539,8 @@ def query_smartsheet_data():
 def draw_half_circle_gauge(value_percentage, total_value, label, width=250, height=150, 
                           color=colors.steelblue, empty_color=colors.lightgrey):
     """Draw a half-circle gauge chart showing a percentage."""
-    from reportlab.graphics.shapes import Path, Circle
     import math
+    from reportlab.graphics.shapes import Wedge, String
     
     drawing = Drawing(width, height)
     
@@ -551,35 +551,18 @@ def draw_half_circle_gauge(value_percentage, total_value, label, width=250, heig
     # Radius of the half-circle
     radius = min(width, height) * 0.7 / 2
     
-    # Draw the background (empty) half-circle
-    p = Path()
-    p.moveTo(cx - radius, cy)  # Start at leftmost point
-    p.arcTo(cx - radius, cy - radius, cx + radius, cy + radius, 180, 180)  # Draw 180 degree arc
-    p.lineTo(cx - radius, cy)  # Close the path
-    p.fillColor = empty_color
-    p.strokeColor = colors.grey
-    p.strokeWidth = 1
-    drawing.add(p)
+    # Create the background (empty) half-circle using a Wedge
+    background = Wedge(cx, cy, radius, 0, 180, fillColor=empty_color, strokeColor=colors.grey, strokeWidth=1)
+    drawing.add(background)
     
-    # Calculate angle for the filled portion
-    filled_angle = min(180, 180 * value_percentage / 100)
+    # Calculate angle for the filled portion (0 to 180 degrees)
+    filled_angle = min(180, value_percentage * 1.8)  # 100% = 180 degrees
     
-    # Draw the filled portion
+    # Create the filled portion using a Wedge
     if filled_angle > 0:
-        p2 = Path()
-        p2.moveTo(cx, cy)  # Start at center bottom
-        p2.lineTo(cx - radius, cy)  # Line to leftmost point
-        
-        # Draw the arc for the filled portion (reverse direction)
-        end_angle = 180 - filled_angle
-        end_x = cx + radius * math.cos(math.radians(end_angle))
-        end_y = cy + radius * math.sin(math.radians(end_angle))
-        p2.arcTo(cx - radius, cy - radius, cx + radius, cy + radius, 180, -filled_angle)
-        p2.lineTo(cx, cy)  # Back to center
-        p2.fillColor = color
-        p2.strokeColor = colors.black
-        p2.strokeWidth = 0.5
-        drawing.add(p2)
+        filled = Wedge(cx, cy, radius, 0, filled_angle, 
+                     fillColor=color, strokeColor=colors.black, strokeWidth=0.5)
+        drawing.add(filled)
     
     # Add labels
     drawing.add(String(cx, cy + radius * 1.2, label,
