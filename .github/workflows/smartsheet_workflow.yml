@@ -43,22 +43,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install smartsheet-python-sdk python-dotenv reportlab
 
+      # Determine current hour (UTC) to decide which scheduled task to run
+      - name: Determine scheduled task
+        if: github.event_name == 'schedule'
+        id: determine-task
+        run: |
+          HOUR=$(date -u +%H)
+          DAY=$(date -u +%d)
+          WEEKDAY=$(date -u +%u)
+          
+          if [[ "$HOUR" == "00" ]]; then
+            echo "task=track" >> $GITHUB_OUTPUT
+          elif [[ "$HOUR" == "01" && "$WEEKDAY" == "1" ]]; then
+            echo "task=weekly-report" >> $GITHUB_OUTPUT
+          elif [[ "$HOUR" == "02" && "$DAY" == "01" ]]; then
+            echo "task=monthly-report" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run track
-        if: github.event.inputs.action == 'track' || github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        if: github.event.inputs.action == 'track' || steps.determine-task.outputs.task == 'track'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_tracker.py
 
       - name: Run weekly report
-        if: github.event.inputs.action == 'weekly-report' || github.event_name == 'schedule' && github.event.schedule == '0 1 * * MON'
+        if: github.event.inputs.action == 'weekly-report' || steps.determine-task.outputs.task == 'weekly-report'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_report.py --weekly --previous --force
 
       - name: Run monthly report
-        if: github.event.inputs.action == 'monthly-report' || github.event_name == 'schedule' && github.event.schedule == '0 2 1 * *'
+        if: github.event.inputs.action == 'monthly-report' || steps.determine-task.outputs.task == 'monthly-report'
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
@@ -103,5 +120,5 @@ jobs:
           git config user.email 'actions@github.com'
           mkdir -p reports/weekly reports/monthly
           git add tracking_data/ reports/
-          git commit -m "${{ github.event.inputs.action || 'track' }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
+          git commit -m "${{ github.event.inputs.action || steps.determine-task.outputs.task || 'track' }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
           git push
