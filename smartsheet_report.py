@@ -13,9 +13,8 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing, String
-from reportlab.graphics.charts.barcharts import VerticalBarChart
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.charts.linecharts import HorizontalLineChart
+from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarChart
+from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.widgets.markers import makeMarker
 
 # Set up logging
@@ -47,6 +46,7 @@ SHEET_IDS = {
     "NM": 4275419734822788,
 }
 
+# Color scheme
 GROUP_COLORS = {
     "NA": colors.HexColor("#E63946"),
     "NF": colors.HexColor("#457B9D"),
@@ -57,14 +57,7 @@ GROUP_COLORS = {
     "NV": colors.HexColor("#00B4D8"),
 }
 
-PHASE_COLORS = {
-    "1": colors.HexColor("#1F77B4"),
-    "2": colors.HexColor("#FF7F0E"),
-    "3": colors.HexColor("#2CA02C"),
-    "4": colors.HexColor("#9467BD"),
-    "5": colors.HexColor("#D62728"),
-}
-
+# Phase names for better readability
 PHASE_NAMES = {
     "1": "Kontrolle",
     "2": "BE",
@@ -72,6 +65,9 @@ PHASE_NAMES = {
     "4": "C",
     "5": "Reopen C2",
 }
+
+# User colors (will be generated dynamically)
+USER_COLORS = {}
 
 # Directories
 DATA_DIR = "tracking_data"
@@ -143,154 +139,71 @@ def collect_metrics(changes):
         "groups": defaultdict(int),
         "phases": defaultdict(int),
         "users": defaultdict(int),
-        "marketplaces": defaultdict(int),
-        "daily": defaultdict(int),
-        "group_phase": defaultdict(lambda: defaultdict(int)),
-        "user_groups": defaultdict(lambda: defaultdict(int)),
-        "user_phases": defaultdict(lambda: defaultdict(int)),
-        "marketplace_groups": defaultdict(lambda: defaultdict(int)),
+        "group_phase_user": defaultdict(lambda: defaultdict(lambda: defaultdict(int))),
     }
     
     # Add sample data if no changes
     if not changes:
         # Sample data for empty report
-        metrics["groups"] = {"NA": 5, "NF": 3, "NH": 2}
-        metrics["phases"] = {"1": 3, "2": 4, "3": 2, "4": 1}
-        metrics["users"] = {"Sample User 1": 5, "Sample User 2": 3, "Sample User 3": 2}
-        metrics["marketplaces"] = {"DE": 4, "FR": 3, "UK": 2, "ES": 1}
+        metrics["groups"] = {"NA": 5, "NF": 3, "NH": 2, "NP": 1, "NT": 4, "NV": 2, "NM": 3}
+        metrics["phases"] = {"1": 3, "2": 4, "3": 2, "4": 1, "5": 3}
         
-        # Sample daily data for timeline chart
-        today = date.today()
-        for i in range(7, 0, -1):
-            day = today - timedelta(days=i)
-            metrics["daily"][day.isoformat()] = i % 3 + 1
+        # Sample user data for each group
+        sample_users = ["User A", "User B", "User C", "User D"]
+        for group in metrics["groups"]:
+            for phase in metrics["phases"]:
+                for user in sample_users:
+                    # Create random distribution of users across phases
+                    if (ord(group[-1]) + ord(phase) + ord(user[-1])) % 3 == 0:
+                        metrics["group_phase_user"][group][phase][user] = (ord(group[-1]) + ord(phase) + ord(user[-1])) % 5 + 1
             
         return metrics
     
+    # Process real data
     for change in changes:
         group = change.get('Group', '')
         phase = change.get('Phase', '')
         user = change.get('User', '')
-        marketplace = change.get('Marketplace', '')
         
         metrics["groups"][group] += 1
         metrics["phases"][phase] += 1
         metrics["users"][user] += 1
-        metrics["marketplaces"][marketplace] += 1
         
-        # User metrics
-        if user:
-            metrics["user_groups"][user][group] += 1
-            metrics["user_phases"][user][phase] += 1
-            
-        # Marketplace metrics
-        if marketplace:
-            metrics["marketplace_groups"][marketplace][group] += 1
-            
-        # Daily timeline data
-        if change.get('ParsedDate'):
-            date_key = change['ParsedDate'].isoformat()
-            metrics["daily"][date_key] += 1
-            
-        # Group-phase breakdown
-        if group and phase:
-            metrics["group_phase"][group][phase] += 1
+        # Detailed metrics for group-phase-user breakdown
+        if group and phase and user:
+            metrics["group_phase_user"][group][phase][user] += 1
             
     return metrics
 
-def create_changes_table(changes, max_rows=20):
-    """Create a table showing detailed change information."""
-    if not changes:
-        return None
-        
-    # Prepare data
-    table_data = [["Date", "Group", "Phase", "User", "Marketplace"]]
+def generate_user_colors(users):
+    """Generate consistent colors for users."""
+    # Base colors
+    base_colors = [
+        colors.HexColor("#1f77b4"),  # Blue
+        colors.HexColor("#ff7f0e"),  # Orange
+        colors.HexColor("#2ca02c"),  # Green
+        colors.HexColor("#d62728"),  # Red
+        colors.HexColor("#9467bd"),  # Purple
+        colors.HexColor("#8c564b"),  # Brown
+        colors.HexColor("#e377c2"),  # Pink
+        colors.HexColor("#7f7f7f"),  # Gray
+        colors.HexColor("#bcbd22"),  # Yellow-green
+        colors.HexColor("#17becf"),  # Cyan
+    ]
     
-    # Sort changes by date (newest first)
-    sorted_changes = sorted(changes, 
-                           key=lambda x: x.get('Timestamp', ''), 
-                           reverse=True)
+    # Clear existing colors
+    USER_COLORS.clear()
     
-    # Add rows (limit to max_rows)
-    for change in sorted_changes[:max_rows]:
-        date_str = change.get('Date', '')
-        if not date_str and change.get('ParsedDate'):
-            date_str = change['ParsedDate'].strftime('%Y-%m-%d')
-            
-        row = [
-            date_str,
-            change.get('Group', ''),
-            PHASE_NAMES.get(change.get('Phase', ''), change.get('Phase', '')),
-            change.get('User', ''),
-            change.get('Marketplace', '')
-        ]
-        table_data.append(row)
+    # Assign colors to users
+    sorted_users = sorted(users.keys())
+    for i, user in enumerate(sorted_users):
+        if user:  # Only assign colors to non-empty user names
+            USER_COLORS[user] = base_colors[i % len(base_colors)]
     
-    # Create table
-    colWidths = [30*mm, 20*mm, 25*mm, 45*mm, 30*mm]
-    table = Table(table_data, colWidths=colWidths)
-    
-    # Style
-    style = TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ALIGN', (0,0), (-1,0), 'CENTER'),
-        ('FONTSIZE', (0,1), (-1,-1), 9),
-    ])
-    table.setStyle(style)
-    
-    return table
+    return USER_COLORS
 
-def make_pie_chart(data_dict, title, width=400, height=200, colors_dict=None):
-    """Create a pie chart from the given data."""
-    drawing = Drawing(width, height)
-    
-    # Add title
-    drawing.add(String(width/2, height-15, title,
-                      fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
-    
-    # Create the pie chart
-    pie = Pie()
-    pie.x = 100
-    pie.y = 25
-    pie.width = 150
-    pie.height = 150
-    
-    # Prepare data
-    labels = []
-    data = []
-    
-    # If data is empty, add sample data
-    if not data_dict:
-        data_dict = {"Sample": 1}
-        
-    for key, value in data_dict.items():
-        if value > 0:  # Only include non-zero values
-            labels.append(str(key))
-            data.append(value)
-    
-    # If still no data, add a placeholder
-    if not data:
-        labels = ['No Data']
-        data = [1]
-    
-    pie.data = data
-    pie.labels = [f"{labels[i]}: {data[i]}" for i in range(len(labels))]
-    
-    # Set slice properties
-    for i in range(len(data)):
-        pie.slices[i].strokeWidth = 0.5
-        
-        # Set color if available
-        if colors_dict and labels[i] in colors_dict:
-            pie.slices[i].fillColor = colors_dict[labels[i]]
-    
-    drawing.add(pie)
-    return drawing
-
-def make_bar_chart(data_dict, title, width=500, height=250, colors_dict=None):
-    """Create a bar chart from the given data."""
+def make_group_bar_chart(data_dict, title, width=500, height=300):
+    """Create a bar chart showing counts by group."""
     drawing = Drawing(width, height)
     
     # Add title
@@ -305,29 +218,40 @@ def make_bar_chart(data_dict, title, width=500, height=250, colors_dict=None):
     chart = VerticalBarChart()
     chart.x = 50
     chart.y = 50
-    chart.height = 150
+    chart.height = 200
     chart.width = 400
-    chart.categoryAxis.categoryNames = list(data_dict.keys())
-    chart.data = [list(data_dict.values())]
-    chart.bars[0].fillColor = colors.steelblue
     
-    # Set custom colors if available
-    if colors_dict:
-        for i, key in enumerate(data_dict.keys()):
-            if key in colors_dict:
-                chart.bars[0].fillColor = colors_dict[key]
+    # Sort groups alphabetically
+    sorted_keys = sorted(data_dict.keys())
+    chart.categoryAxis.categoryNames = sorted_keys
+    chart.data = [list(data_dict[k] for k in sorted_keys)]
     
+    # Add colors for each group
+    for i, key in enumerate(sorted_keys):
+        if key in GROUP_COLORS:
+            chart.bars[0].fillColor = GROUP_COLORS[key]
+            
     # Adjust labels
-    chart.categoryAxis.labels.angle = 30 if len(data_dict) > 5 else 0
-    chart.categoryAxis.labels.fontSize = 8
-    chart.categoryAxis.labels.dx = -10
-    chart.categoryAxis.labels.dy = -5
+    chart.categoryAxis.labels.fontSize = 10
+    chart.categoryAxis.labels.boxAnchor = 'n'
+    chart.categoryAxis.labels.angle = 0
+    chart.categoryAxis.labels.dy = -10
+    
+    # Value axis
+    chart.valueAxis.valueMin = 0
+    chart.valueAxis.valueMax = max(data_dict.values()) * 1.1 if data_dict else 10
+    chart.valueAxis.valueStep = max(1, int(max(data_dict.values()) / 5)) if data_dict else 2
+    
+    # Add group colors
+    for i, group in enumerate(sorted_keys):
+        if group in GROUP_COLORS:
+            chart.bars[(0, i)].fillColor = GROUP_COLORS.get(group, colors.steelblue)
     
     drawing.add(chart)
     return drawing
 
-def make_line_chart(data_dict, title, width=500, height=250):
-    """Create a line chart from the given data."""
+def make_phase_bar_chart(data_dict, title, width=500, height=300):
+    """Create a bar chart showing counts by phase."""
     drawing = Drawing(width, height)
     
     # Add title
@@ -336,46 +260,120 @@ def make_line_chart(data_dict, title, width=500, height=250):
     
     # If data is empty, add sample data
     if not data_dict:
-        # Sample data with dates
-        from datetime import date, timedelta
-        today = date.today()
-        data_dict = {
-            (today - timedelta(days=i)).isoformat(): i % 3 + 1 
-            for i in range(7, 0, -1)
-        }
+        data_dict = {"1": 3, "2": 4, "3": 2, "4": 1, "5": 3}
     
-    # Sort by date
-    sorted_dates = sorted(data_dict.keys())
-    
-    # Create the line chart
-    chart = HorizontalLineChart()
+    # Create the bar chart
+    chart = VerticalBarChart()
     chart.x = 50
     chart.y = 50
-    chart.height = 150
+    chart.height = 200
     chart.width = 400
     
-    # Format x-axis dates for better display
-    display_dates = []
-    for d in sorted_dates:
-        try:
-            dt = datetime.fromisoformat(d).date()
-            display_dates.append(dt.strftime('%d/%m'))
-        except:
-            display_dates.append(str(d))
+    # Sort phases numerically
+    sorted_keys = sorted(data_dict.keys(), key=lambda x: int(x) if x.isdigit() else 999)
     
-    chart.categoryAxis.categoryNames = display_dates
-    chart.categoryAxis.labels.angle = 30
-    chart.categoryAxis.labels.fontSize = 8
+    # Use phase names for display
+    chart.categoryAxis.categoryNames = [f"{k}: {PHASE_NAMES.get(k, '')}" for k in sorted_keys]
+    chart.data = [list(data_dict[k] for k in sorted_keys)]
     
-    # Set data
-    chart.data = [[data_dict[d] for d in sorted_dates]]
+    # Adjust labels
+    chart.categoryAxis.labels.fontSize = 10
+    chart.categoryAxis.labels.boxAnchor = 'n'
+    chart.categoryAxis.labels.angle = 0
+    chart.categoryAxis.labels.dy = -10
     
-    # Style
-    chart.lines[0].strokeColor = colors.blue
-    chart.lines[0].symbol = makeMarker('FilledCircle')
-    chart.lines[0].strokeWidth = 2
+    # Value axis
+    chart.valueAxis.valueMin = 0
+    chart.valueAxis.valueMax = max(data_dict.values()) * 1.1 if data_dict else 10
+    chart.valueAxis.valueStep = max(1, int(max(data_dict.values()) / 5)) if data_dict else 2
+    
+    # Add phase colors (blue to red spectrum)
+    phase_colors = {
+        "1": colors.HexColor("#1f77b4"),  # Blue
+        "2": colors.HexColor("#ff7f0e"),  # Orange
+        "3": colors.HexColor("#2ca02c"),  # Green
+        "4": colors.HexColor("#9467bd"),  # Purple
+        "5": colors.HexColor("#d62728"),  # Red
+    }
+    
+    for i, phase in enumerate(sorted_keys):
+        chart.bars[(0, i)].fillColor = phase_colors.get(phase, colors.steelblue)
     
     drawing.add(chart)
+    return drawing
+
+def make_stacked_bar_chart_by_user(group, phase_user_data, title, width=500, height=400):
+    """Create a horizontal stacked bar chart showing user contributions per phase."""
+    drawing = Drawing(width, height)
+    
+    # Add title
+    drawing.add(String(width/2, height-15, title,
+                      fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
+    
+    # Create the bar chart
+    chart = HorizontalBarChart()
+    chart.x = 100  # More space for phase labels
+    chart.y = 50
+    chart.height = 250
+    chart.width = 350
+    
+    # Sort phases numerically
+    phases = sorted(phase_user_data.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+    
+    # Get all users across all phases
+    all_users = set()
+    for phase_data in phase_user_data.values():
+        all_users.update(phase_data.keys())
+    all_users = sorted(all_users)
+    
+    # Generate consistent colors for users
+    user_colors = generate_user_colors({user: 1 for user in all_users})
+    
+    # Prepare data for stacked bars
+    data = []
+    for user in all_users:
+        user_data = []
+        for phase in phases:
+            user_data.append(phase_user_data.get(phase, {}).get(user, 0))
+        data.append(user_data)
+    
+    # Set the data
+    chart.data = data
+    
+    # Use phase names for categories
+    chart.categoryAxis.categoryNames = [f"{p}: {PHASE_NAMES.get(p, '')}" for p in phases]
+    chart.categoryAxis.labels.fontSize = 10
+    
+    # Value axis
+    max_total = 0
+    for phase in phases:
+        phase_total = sum(phase_user_data.get(phase, {}).values())
+        if phase_total > max_total:
+            max_total = phase_total
+    
+    chart.valueAxis.valueMin = 0
+    chart.valueAxis.valueMax = max_total * 1.1 if max_total else 10
+    chart.valueAxis.valueStep = max(1, int(max_total / 5)) if max_total else 2
+    
+    # Set colors for each user's bars
+    for i, user in enumerate(all_users):
+        chart.bars[i].fillColor = user_colors.get(user, colors.steelblue)
+    
+    drawing.add(chart)
+    
+    # Add a legend for users
+    if all_users:
+        legend = Legend()
+        legend.alignment = 'right'
+        legend.x = 50
+        legend.y = height - 50
+        legend.columnMaximum = 8
+        legend.dxTextSpace = 5
+        legend.fontSize = 8
+        
+        legend.colorNamePairs = [(user_colors.get(user, colors.steelblue), user) for user in all_users]
+        drawing.add(legend)
+    
     return drawing
 
 def create_sample_image(title, message, width=500, height=200):
@@ -420,7 +418,7 @@ def create_weekly_report(start_date, end_date, force=False):
     # Try to load all changes if no data for this period
     all_changes = changes if has_data else load_changes()
     
-    # Collect metrics (will use sample data if no changes)
+    # Collect metrics
     metrics = collect_metrics(changes if has_data else all_changes)
     
     # Create PDF document
@@ -433,12 +431,6 @@ def create_weekly_report(start_date, end_date, force=False):
     heading_style = styles['Heading1']
     subheading_style = styles['Heading2']
     normal_style = styles['Normal']
-    small_style = ParagraphStyle(
-        'Small',
-        parent=styles['Normal'],
-        fontSize=8,
-        leading=10
-    )
     
     # Build the PDF content
     story = []
@@ -464,7 +456,6 @@ def create_weekly_report(start_date, end_date, force=False):
         ["Total Changes", str(metrics["total_changes"])],
         ["Groups with Activity", str(len(metrics["groups"]))],
         ["Users Active", str(len(metrics["users"]))],
-        ["Marketplaces Affected", str(len(metrics["marketplaces"]))]
     ]
     summary_table = Table(summary_data, colWidths=[100*mm, 50*mm])
     summary_table.setStyle(TableStyle([
@@ -475,163 +466,39 @@ def create_weekly_report(start_date, end_date, force=False):
     story.append(summary_table)
     story.append(Spacer(1, 10*mm))
     
-    # Group activity
+    # Main page charts
+    
+    # Chart 1: Group activity bar chart
     story.append(Paragraph("Activity by Product Group", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Product Group Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        story.append(make_pie_chart(metrics["groups"], "Changes by Group", colors_dict=GROUP_COLORS))
-    story.append(Spacer(1, 5*mm))
+    group_chart = make_group_bar_chart(metrics["groups"], "Changes by Group")
+    story.append(group_chart)
+    story.append(Spacer(1, 10*mm))
     
-    # Phase activity
+    # Chart 2: Phase activity bar chart
     story.append(Paragraph("Activity by Phase", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Phase Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        story.append(make_pie_chart(metrics["phases"], "Changes by Phase", colors_dict=PHASE_COLORS))
-    story.append(Spacer(1, 5*mm))
+    phase_chart = make_phase_bar_chart(metrics["phases"], "Changes by Phase")
+    story.append(phase_chart)
     
-    # Daily activity timeline
-    story.append(PageBreak())
-    story.append(Paragraph("Daily Activity Timeline", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Daily Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        story.append(make_line_chart(metrics["daily"], "Changes by Day"))
-    story.append(Spacer(1, 10*mm))
-    
-    # Most active users
-    story.append(Paragraph("Most Active Users", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("User Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        top_users = dict(sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:10])
-        story.append(make_bar_chart(top_users, "Top 10 Users by Activity"))
-    story.append(Spacer(1, 5*mm))
-    
-    # Most active marketplaces
-    story.append(PageBreak())
-    story.append(Paragraph("Most Active Marketplaces", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Marketplace Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        top_markets = dict(sorted(metrics["marketplaces"].items(), key=lambda x: x[1], reverse=True)[:10])
-        story.append(make_bar_chart(top_markets, "Top 10 Marketplaces by Activity"))
-    story.append(Spacer(1, 10*mm))
-    
-    # Detailed table of changes
-    if has_data or (all_changes and len(all_changes) > 0):
+    # Group detail pages with stacked bar charts
+    for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
+        if not group:
+            continue
+            
         story.append(PageBreak())
-        story.append(Paragraph("Recent Changes Detail", heading_style))
+        story.append(Paragraph(f"Group {group} Details", heading_style))
+        story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
         
-        if not has_data and all_changes:
-            story.append(Paragraph("<i>Showing data from entire history as no changes were found for the selected period</i>", normal_style))
-            
-        changes_table = create_changes_table(changes if has_data else all_changes)
-        if changes_table:
-            story.append(changes_table)
-            
-            if len(changes if has_data else all_changes) > 20:
-                story.append(Paragraph(f"<i>Showing 20 most recent of {len(changes if has_data else all_changes)} total changes</i>", small_style))
+        # Stacked bar chart for this group
+        phase_user_data = metrics["group_phase_user"].get(group, {})
+        if phase_user_data:
+            stacked_chart = make_stacked_bar_chart_by_user(
+                group, 
+                phase_user_data, 
+                f"User Activity by Phase for Group {group}"
+            )
+            story.append(stacked_chart)
         else:
-            story.append(Paragraph("No detailed change data available", normal_style))
-    
-    # User details
-    if has_data or (all_changes and len(all_changes) > 0):
-        story.append(PageBreak())
-        story.append(Paragraph("User Activity Details", heading_style))
-        
-        if not has_data and all_changes:
-            story.append(Paragraph("<i>Showing data from entire history as no changes were found for the selected period</i>", normal_style))
-        
-        # Create user activity breakdowns
-        user_data = {}
-        for user, count in sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:5]:
-            if not user:
-                continue
-                
-            user_data[user] = {
-                "total": count,
-                "groups": metrics["user_groups"].get(user, {}),
-                "phases": metrics["user_phases"].get(user, {})
-            }
-        
-        # Show top user details
-        for user, data in user_data.items():
-            story.append(Paragraph(f"User: {user}", subheading_style))
-            
-            # User summary
-            user_summary = [
-                ["Total Changes", str(data["total"])],
-            ]
-            
-            # Add group breakdown
-            for group, count in sorted(data["groups"].items(), key=lambda x: x[1], reverse=True):
-                if group:
-                    user_summary.append([f"Group {group}", str(count)])
-            
-            # Create table
-            user_table = Table(user_summary, colWidths=[80*mm, 30*mm])
-            user_table.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ]))
-            story.append(user_table)
-            
-            # Phase breakdown chart
-            if data["phases"]:
-                story.append(Spacer(1, 5*mm))
-                phase_chart = make_pie_chart(data["phases"], f"Phase Distribution for {user}", colors_dict=PHASE_COLORS)
-                story.append(phase_chart)
-            
-            story.append(Spacer(1, 10*mm))
-    
-    # Group detail pages
-    story.append(PageBreak())
-    story.append(Paragraph("Product Group Details", heading_style))
-    
-    if not has_data and not all_changes:
-        # Add sample group details
-        for group in ["NA", "NF", "NH"]:
-            story.append(Spacer(1, 5*mm))
-            story.append(Paragraph(f"Group {group}", subheading_style))
-            story.append(create_sample_image(f"Group {group} Activity", "Sample data shown - no actual changes in this period"))
-            story.append(Spacer(1, 5*mm))
-    else:
-        # Add real group details
-        for group, count in sorted(metrics["groups"].items(), key=lambda x: x[1], reverse=True):
-            if not group:
-                continue
-                
-            story.append(Spacer(1, 5*mm))
-            story.append(Paragraph(f"Group {group}", subheading_style))
-            story.append(Paragraph(f"Total changes: {count}", normal_style))
-            
-            # Phase distribution for this group
-            phase_data = metrics["group_phase"].get(group, {})
-            if phase_data:
-                story.append(make_pie_chart(phase_data, f"Phase Distribution for Group {group}", colors_dict=PHASE_COLORS))
-                
-                # Phase breakdown table
-                phase_table_data = [["Phase", "Count", "Percentage"]]
-                for phase, phase_count in sorted(phase_data.items(), key=lambda x: x[1], reverse=True):
-                    percentage = (phase_count / count) * 100 if count > 0 else 0
-                    phase_table_data.append([
-                        PHASE_NAMES.get(phase, phase),
-                        str(phase_count),
-                        f"{percentage:.1f}%"
-                    ])
-                    
-                phase_table = Table(phase_table_data, colWidths=[50*mm, 30*mm, 30*mm])
-                phase_table.setStyle(TableStyle([
-                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                    ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-                    ('ALIGN', (1,1), (2,-1), 'RIGHT')
-                ]))
-                story.append(Spacer(1, 5*mm))
-                story.append(phase_table)
-            
-            story.append(Spacer(1, 10*mm))
+            story.append(Paragraph("No detailed data available for this group", normal_style))
     
     # Build the PDF
     doc.build(story)
@@ -667,7 +534,7 @@ def create_monthly_report(year, month, force=False):
     # Try to load all changes if no data for this period
     all_changes = changes if has_data else load_changes()
     
-    # Collect metrics (will use sample data if no changes)
+    # Collect metrics
     metrics = collect_metrics(changes if has_data else all_changes)
     
     # Create PDF document
@@ -680,12 +547,6 @@ def create_monthly_report(year, month, force=False):
     heading_style = styles['Heading1']
     subheading_style = styles['Heading2']
     normal_style = styles['Normal']
-    small_style = ParagraphStyle(
-        'Small',
-        parent=styles['Normal'],
-        fontSize=8,
-        leading=10
-    )
     
     # Build the PDF content
     story = []
@@ -711,7 +572,6 @@ def create_monthly_report(year, month, force=False):
         ["Total Changes", str(metrics["total_changes"])],
         ["Groups with Activity", str(len(metrics["groups"]))],
         ["Users Active", str(len(metrics["users"]))],
-        ["Marketplaces Affected", str(len(metrics["marketplaces"]))]
     ]
     summary_table = Table(summary_data, colWidths=[100*mm, 50*mm])
     summary_table.setStyle(TableStyle([
@@ -722,206 +582,39 @@ def create_monthly_report(year, month, force=False):
     story.append(summary_table)
     story.append(Spacer(1, 10*mm))
     
-    # Group activity
+    # Main page charts
+    
+    # Chart 1: Group activity bar chart
     story.append(Paragraph("Activity by Product Group", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Product Group Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        story.append(make_pie_chart(metrics["groups"], "Changes by Group", colors_dict=GROUP_COLORS))
-        
-        # Add group table
-        group_table_data = [["Group", "Changes", "Percentage"]]
-        for group, count in sorted(metrics["groups"].items(), key=lambda x: x[1], reverse=True):
-            if not group:
-                continue
-            percentage = (count / metrics["total_changes"]) * 100 if metrics["total_changes"] > 0 else 0
-            group_table_data.append([group, str(count), f"{percentage:.1f}%"])
-            
-        group_table = Table(group_table_data, colWidths=[30*mm, 30*mm, 40*mm])
-        group_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('ALIGN', (1,1), (2,-1), 'RIGHT')
-        ]))
-        story.append(Spacer(1, 5*mm))
-        story.append(group_table)
-            
-    story.append(Spacer(1, 5*mm))
+    group_chart = make_group_bar_chart(metrics["groups"], "Changes by Group")
+    story.append(group_chart)
+    story.append(Spacer(1, 10*mm))
     
-    # Phase activity
-    story.append(PageBreak())
+    # Chart 2: Phase activity bar chart
     story.append(Paragraph("Activity by Phase", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Phase Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        story.append(make_pie_chart(metrics["phases"], "Changes by Phase", colors_dict=PHASE_COLORS))
-        
-        # Add phase table with names
-        phase_table_data = [["Phase", "Name", "Changes", "Percentage"]]
-        for phase, count in sorted(metrics["phases"].items(), key=lambda x: x[1], reverse=True):
-            if not phase:
-                continue
-            percentage = (count / metrics["total_changes"]) * 100 if metrics["total_changes"] > 0 else 0
-            phase_table_data.append([
-                phase, 
-                PHASE_NAMES.get(phase, "Unknown"),
-                str(count), 
-                f"{percentage:.1f}%"
-            ])
+    phase_chart = make_phase_bar_chart(metrics["phases"], "Changes by Phase")
+    story.append(phase_chart)
+    
+    # Group detail pages with stacked bar charts
+    for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
+        if not group:
+            continue
             
-        phase_table = Table(phase_table_data, colWidths=[20*mm, 40*mm, 30*mm, 30*mm])
-        phase_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('ALIGN', (2,1), (3,-1), 'RIGHT')
-        ]))
-        story.append(Spacer(1, 5*mm))
-        story.append(phase_table)
-            
-    story.append(Spacer(1, 5*mm))
-    
-    # Daily activity timeline
-    story.append(PageBreak())
-    story.append(Paragraph("Daily Activity Timeline", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Daily Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        story.append(make_line_chart(metrics["daily"], "Changes by Day"))
-    story.append(Spacer(1, 10*mm))
-    
-    # Most active users
-    story.append(Paragraph("Most Active Users", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("User Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        top_users = dict(sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:10])
-        story.append(make_bar_chart(top_users, "Top 10 Users by Activity"))
-    story.append(Spacer(1, 5*mm))
-    
-    # Most active marketplaces
-    story.append(PageBreak())
-    story.append(Paragraph("Most Active Marketplaces", heading_style))
-    if not has_data and not all_changes:
-        story.append(create_sample_image("Marketplace Activity", "Sample data shown - no actual changes in this period"))
-    else:
-        top_markets = dict(sorted(metrics["marketplaces"].items(), key=lambda x: x[1], reverse=True)[:10])
-        story.append(make_bar_chart(top_markets, "Top 10 Marketplaces by Activity"))
-    story.append(Spacer(1, 10*mm))
-    
-    # Detailed table of changes
-    if has_data or (all_changes and len(all_changes) > 0):
         story.append(PageBreak())
-        story.append(Paragraph("Recent Changes Detail", heading_style))
+        story.append(Paragraph(f"Group {group} Details", heading_style))
+        story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
         
-        if not has_data and all_changes:
-            story.append(Paragraph("<i>Showing data from entire history as no changes were found for the selected period</i>", normal_style))
-            
-        changes_table = create_changes_table(changes if has_data else all_changes, max_rows=30)
-        if changes_table:
-            story.append(changes_table)
-            
-            if len(changes if has_data else all_changes) > 30:
-                story.append(Paragraph(f"<i>Showing 30 most recent of {len(changes if has_data else all_changes)} total changes</i>", small_style))
+        # Stacked bar chart for this group
+        phase_user_data = metrics["group_phase_user"].get(group, {})
+        if phase_user_data:
+            stacked_chart = make_stacked_bar_chart_by_user(
+                group, 
+                phase_user_data, 
+                f"User Activity by Phase for Group {group}"
+            )
+            story.append(stacked_chart)
         else:
-            story.append(Paragraph("No detailed change data available", normal_style))
-    
-    # User details
-    if has_data or (all_changes and len(all_changes) > 0):
-        story.append(PageBreak())
-        story.append(Paragraph("User Activity Details", heading_style))
-        
-        if not has_data and all_changes:
-            story.append(Paragraph("<i>Showing data from entire history as no changes were found for the selected period</i>", normal_style))
-        
-        # Create user activity breakdowns
-        user_data = {}
-        for user, count in sorted(metrics["users"].items(), key=lambda x: x[1], reverse=True)[:8]:
-            if not user:
-                continue
-                
-            user_data[user] = {
-                "total": count,
-                "groups": metrics["user_groups"].get(user, {}),
-                "phases": metrics["user_phases"].get(user, {})
-            }
-        
-        # Show top user details
-        for user, data in user_data.items():
-            story.append(Paragraph(f"User: {user}", subheading_style))
-            
-            # User summary
-            user_summary = [
-                ["Total Changes", str(data["total"])],
-            ]
-            
-            # Add group breakdown
-            for group, count in sorted(data["groups"].items(), key=lambda x: x[1], reverse=True):
-                if group:
-                    user_summary.append([f"Group {group}", str(count)])
-            
-            # Create table
-            user_table = Table(user_summary, colWidths=[80*mm, 30*mm])
-            user_table.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ]))
-            story.append(user_table)
-            
-            # Phase breakdown chart
-            if data["phases"]:
-                story.append(Spacer(1, 5*mm))
-                phase_chart = make_pie_chart(data["phases"], f"Phase Distribution for {user}", colors_dict=PHASE_COLORS)
-                story.append(phase_chart)
-            
-            story.append(Spacer(1, 10*mm))
-    
-    # Group detail pages
-    story.append(PageBreak())
-    story.append(Paragraph("Product Group Details", heading_style))
-    
-    if not has_data and not all_changes:
-        # Add sample group details
-        for group in ["NA", "NF", "NH"]:
-            story.append(Spacer(1, 5*mm))
-            story.append(Paragraph(f"Group {group}", subheading_style))
-            story.append(create_sample_image(f"Group {group} Activity", "Sample data shown - no actual changes in this period"))
-            story.append(Spacer(1, 5*mm))
-    else:
-        # Add real group details
-        for group, count in sorted(metrics["groups"].items(), key=lambda x: x[1], reverse=True):
-            if not group:
-                continue
-                
-            story.append(Spacer(1, 5*mm))
-            story.append(Paragraph(f"Group {group}", subheading_style))
-            story.append(Paragraph(f"Total changes: {count}", normal_style))
-            
-            # Phase distribution for this group
-            phase_data = metrics["group_phase"].get(group, {})
-            if phase_data:
-                story.append(make_pie_chart(phase_data, f"Phase Distribution for Group {group}", colors_dict=PHASE_COLORS))
-                
-                # Phase breakdown table
-                phase_table_data = [["Phase", "Name", "Count", "Percentage"]]
-                for phase, phase_count in sorted(phase_data.items(), key=lambda x: x[1], reverse=True):
-                    percentage = (phase_count / count) * 100 if count > 0 else 0
-                    phase_table_data.append([
-                        phase,
-                        PHASE_NAMES.get(phase, "Unknown"),
-                        str(phase_count),
-                        f"{percentage:.1f}%"
-                    ])
-                    
-                phase_table = Table(phase_table_data, colWidths=[20*mm, 40*mm, 25*mm, 30*mm])
-                phase_table.setStyle(TableStyle([
-                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                    ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-                    ('ALIGN', (2,1), (3,-1), 'RIGHT')
-                ]))
-                story.append(Spacer(1, 5*mm))
-                story.append(phase_table)
-            
-            story.append(Spacer(1, 10*mm))
+            story.append(Paragraph("No detailed data available for this group", normal_style))
     
     # Build the PDF
     doc.build(story)
