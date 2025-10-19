@@ -89,7 +89,7 @@ def parse_date(date_str):
     except:
         return None
 
-def load_changes(start_date, end_date):
+def load_changes(start_date=None, end_date=None):
     """Load changes from the CSV file within the given date range."""
     if not os.path.exists(CHANGES_FILE):
         logger.error(f"Changes file not found: {CHANGES_FILE}")
@@ -103,8 +103,15 @@ def load_changes(start_date, end_date):
                 # Parse the timestamp
                 try:
                     ts = datetime.strptime(row['Timestamp'], "%Y-%m-%d %H:%M:%S").date()
-                    if start_date <= ts <= end_date:
-                        # Also parse the date field for later use
+                    
+                    # Apply date filter if specified
+                    if start_date and end_date:
+                        if start_date <= ts <= end_date:
+                            # Also parse the date field for later use
+                            row['ParsedDate'] = parse_date(row['Date'])
+                            changes.append(row)
+                    else:
+                        # No date filter, include all changes
                         row['ParsedDate'] = parse_date(row['Date'])
                         changes.append(row)
                 except (ValueError, KeyError) as e:
@@ -112,8 +119,11 @@ def load_changes(start_date, end_date):
                     continue
     except Exception as e:
         logger.error(f"Error reading changes file: {e}")
-        
-    logger.info(f"Loaded {len(changes)} changes between {start_date} and {end_date}")
+    
+    if start_date and end_date:
+        logger.info(f"Loaded {len(changes)} changes between {start_date} and {end_date}")
+    else:
+        logger.info(f"Loaded {len(changes)} total changes")
     return changes
 
 def collect_metrics(changes):
@@ -208,7 +218,7 @@ def make_bar_chart(data_dict, title, width=500, height=250):
     drawing.add(chart)
     return drawing
 
-def create_weekly_report(start_date, end_date):
+def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
     # Generate output filename
     week_str = f"{start_date.isocalendar()[0]}-W{start_date.isocalendar()[1]:02d}"
@@ -218,10 +228,21 @@ def create_weekly_report(start_date, end_date):
     
     # Load changes for the week
     changes = load_changes(start_date, end_date)
-    if not changes:
+    
+    # If no changes and not forcing, return None
+    if not changes and not force:
         logger.warning(f"No changes found for week {week_str}")
-        return None
         
+        # If no changes for the specified week, try loading all changes
+        all_changes = load_changes()
+        if not all_changes:
+            logger.warning("No changes found in history file at all")
+            return None
+        
+        # Use most recent changes instead
+        changes = all_changes
+        logger.info(f"Using {len(changes)} changes from entire history instead")
+    
     # Collect metrics
     metrics = collect_metrics(changes)
     
@@ -240,7 +261,15 @@ def create_weekly_report(start_date, end_date):
     
     # Title
     story.append(Paragraph(f"Weekly Smartsheet Changes Report", title_style))
-    story.append(Paragraph(f"Period: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}", normal_style))
+    
+    # If we're using all data instead of just the specified week
+    if not start_date or not end_date or len(load_changes(start_date, end_date)) == 0:
+        # Format for "all time" report
+        story.append(Paragraph(f"All Available Data (Sample Report)", normal_style))
+    else:
+        # Format for normal weekly report
+        story.append(Paragraph(f"Period: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}", normal_style))
+    
     story.append(Spacer(1, 10*mm))
     
     # Summary
@@ -286,7 +315,7 @@ def create_weekly_report(start_date, end_date):
     logger.info(f"Weekly report created: {filename}")
     return filename
 
-def create_monthly_report(year, month):
+def create_monthly_report(year, month, force=False):
     """Create a monthly PDF report."""
     # Determine the month's date range
     start_date = date(year, month, 1)
@@ -303,10 +332,21 @@ def create_monthly_report(year, month):
     
     # Load changes for the month
     changes = load_changes(start_date, end_date)
-    if not changes:
+    
+    # If no changes and not forcing, try all data
+    if not changes and not force:
         logger.warning(f"No changes found for month {month_str}")
-        return None
         
+        # If no changes for the specified month, try loading all changes
+        all_changes = load_changes()
+        if not all_changes:
+            logger.warning("No changes found in history file at all")
+            return None
+        
+        # Use most recent changes instead
+        changes = all_changes
+        logger.info(f"Using {len(changes)} changes from entire history instead")
+    
     # Collect metrics
     metrics = collect_metrics(changes)
     
@@ -326,7 +366,15 @@ def create_monthly_report(year, month):
     
     # Title
     story.append(Paragraph(f"Monthly Smartsheet Changes Report", title_style))
-    story.append(Paragraph(f"Period: {start_date.strftime('%B %Y')}", normal_style))
+    
+    # If we're using all data instead of just the specified month
+    if not start_date or not end_date or len(load_changes(start_date, end_date)) == 0:
+        # Format for "all time" report
+        story.append(Paragraph(f"All Available Data (Sample Report)", normal_style))
+    else:
+        # Format for normal monthly report
+        story.append(Paragraph(f"Period: {start_date.strftime('%B %Y')}", normal_style))
+    
     story.append(Spacer(1, 10*mm))
     
     # Summary
@@ -418,6 +466,7 @@ if __name__ == "__main__":
     parser.add_argument("--month", type=int, help="Month number for monthly report")
     parser.add_argument("--week", type=int, help="ISO week number for weekly report")
     parser.add_argument("--previous", action="store_true", help="Generate report for previous week/month")
+    parser.add_argument("--force", action="store_true", help="Force report generation even with no data")
     
     args = parser.parse_args()
     
@@ -425,12 +474,12 @@ if __name__ == "__main__":
         if args.weekly:
             if args.previous:
                 start_date, end_date = get_previous_week()
-                filename = create_weekly_report(start_date, end_date)
+                filename = create_weekly_report(start_date, end_date, force=args.force)
             elif args.year and args.week:
                 # Calculate date from ISO week
                 start_date = datetime.fromisocalendar(args.year, args.week, 1).date()
                 end_date = start_date + timedelta(days=6)
-                filename = create_weekly_report(start_date, end_date)
+                filename = create_weekly_report(start_date, end_date, force=args.force)
             else:
                 logger.error("For weekly reports, specify --previous OR (--year and --week)")
                 exit(1)
@@ -438,9 +487,9 @@ if __name__ == "__main__":
         elif args.monthly:
             if args.previous:
                 year, month = get_previous_month()
-                filename = create_monthly_report(year, month)
+                filename = create_monthly_report(year, month, force=args.force)
             elif args.year and args.month:
-                filename = create_monthly_report(args.year, args.month)
+                filename = create_monthly_report(args.year, args.month, force=args.force)
             else:
                 logger.error("For monthly reports, specify --previous OR (--year and --month)")
                 exit(1)
