@@ -660,7 +660,7 @@ def create_horizontal_legend(color_name_pairs, width=500, height=30):
             height/2,
             name,
             fontName='Helvetica', 
-            fontSize=8
+            fontSize=10
         ))
     
     return drawing
