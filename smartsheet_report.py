@@ -370,7 +370,7 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
     
     # Return the chart and legend data separately
     return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
-
+    
 def create_horizontal_legend(color_name_pairs, width=500, height=30):
     """Create a horizontal legend with the given color-name pairs."""
     drawing = Drawing(width, height)
