@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image, TableStyle, BackgroundColour
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarChart
@@ -480,7 +480,7 @@ def make_phase_bar_chart(data_dict, title, width=250, height=200):
     drawing.add(chart)
     return drawing
 
-def make_group_detail_chart(group, phase_user_data, title, width=500, height=240): # Reduced from 300
+def make_group_detail_chart(group, phase_user_data, title, width=500, height=200): # Further reduced height
     """Create a horizontal stacked bar chart showing user contributions per phase."""
     from reportlab.graphics.shapes import Rect
     
@@ -502,13 +502,13 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=240
     # Generate consistent colors for users
     user_colors = generate_user_colors({user: 1 for user in all_users})
     
-    # Chart dimensions
+    # Chart dimensions - FURTHER REDUCED
     chart_x = 120
-    chart_y = 40  # Reduced from 50
+    chart_y = 30  # Reduced from 40
     chart_width = 320
-    chart_height = 160  # Reduced from 200
-    bar_height = 16     # Reduced from 20
-    spacing = 8         # Reduced from 10
+    chart_height = 130  # Reduced from 160
+    bar_height = 14     # Reduced from 16
+    spacing = 6         # Reduced from 8
     
     # Calculate maximum total for scale
     max_total = 1  # Minimum value to avoid division by zero
@@ -527,7 +527,7 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=240
             y_position + bar_height/2, 
             PHASE_NAMES.get(phase, f"Phase {phase}"),
             fontName='Helvetica', 
-            fontSize=9,  # Reduced from 10
+            fontSize=8,  # Reduced from 9
             textAnchor='end'
         ))
         
@@ -566,7 +566,7 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=240
                         y_position + bar_height/2,
                         str(value),
                         fontName='Helvetica',
-                        fontSize=7,  # Reduced from 8
+                        fontSize=6,  # Reduced from 7
                         textAnchor='middle'
                     ))
                 
@@ -575,8 +575,8 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=240
     
     # Draw axis line
     drawing.add(Line(
-        chart_x, chart_y - 8,  # Reduced from chart_y - 10
-        chart_x + chart_width, chart_y - 8,
+        chart_x, chart_y - 6,  # Reduced from chart_y - 8
+        chart_x + chart_width, chart_y - 6,
         strokeWidth=1,
         strokeColor=colors.black
     ))
@@ -589,18 +589,18 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=240
         
         # Tick mark
         drawing.add(Line(
-            x_pos, chart_y - 8,
-            x_pos, chart_y - 12,
+            x_pos, chart_y - 6,
+            x_pos, chart_y - 10,
             strokeWidth=1,
             strokeColor=colors.black
         ))
         
         # Value label
         drawing.add(String(
-            x_pos, chart_y - 20,  # Reduced from chart_y - 25
+            x_pos, chart_y - 18,  # Reduced from chart_y - 20
             str(value),
             fontName='Helvetica',
-            fontSize=7,  # Reduced from 8
+            fontSize=6,  # Reduced from 7
             textAnchor='middle'
         ))
     
@@ -799,6 +799,13 @@ def create_weekly_report(start_date, end_date, force=False):
     subheading_style = styles['Heading2']
     normal_style = styles['Normal']
     
+    # Create a colored heading style for group headers
+    colored_group_style = ParagraphStyle(
+        'ColoredGroupHeading',
+        parent=heading_style,
+        textColor=colors.white,  # White text
+    )
+    
     # Build the PDF content
     story = []
     
@@ -852,7 +859,22 @@ def create_weekly_report(start_date, end_date, force=False):
             continue
             
         story.append(PageBreak())
-        story.append(Paragraph(f"Group {group} Details", heading_style))
+        
+        # Create colored header for group
+        group_color = GROUP_COLORS.get(group, colors.steelblue)
+        group_header_data = [[f"Group {group} Details"]]
+        group_header = Table(group_header_data, colWidths=[150*mm], rowHeights=[10*mm])
+        group_header.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), group_color),
+            ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 14),
+        ]))
+        story.append(group_header)
+        story.append(Spacer(1, 5*mm))
+        
         story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
         
         # Grouped bar chart for this group
@@ -876,7 +898,7 @@ def create_weekly_report(start_date, end_date, force=False):
                     story.append(legend)
                     
             # Add the gauge charts for this group - side by side
-            story.append(Spacer(1, 15*mm))
+            story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
             story.append(Paragraph("Activity Metrics", subheading_style))
                 
             # Get smartsheet data for gauges filtered by group
@@ -916,22 +938,24 @@ def create_weekly_report(start_date, end_date, force=False):
                 story.append(gauge_table)
                 
                 # Add marketplace activity metrics after the gauge charts
-                story.append(Spacer(1, 15*mm))
+                story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
                 story.append(Paragraph("Marketplace Activity", subheading_style))
                 
                 # Get marketplace activity data
                 most_active, most_inactive = get_marketplace_activity(group)
                 
-                # Create a table for most active marketplaces
-                story.append(Paragraph("Most Active Marketplaces", subheading_style))
+                # Create tables for most active and inactive marketplaces - SIDE BY SIDE
                 active_table = create_activity_table(most_active, "Most Active")
-                story.append(active_table)
-                story.append(Spacer(1, 5*mm))
-                
-                # Create a table for most inactive marketplaces
-                story.append(Paragraph("Most Inactive Marketplaces", subheading_style))
                 inactive_table = create_activity_table(most_inactive, "Most Inactive")
-                story.append(inactive_table)
+                
+                # Place tables side by side
+                marketplace_table_data = [
+                    [Paragraph("Most Active Marketplaces", subheading_style), 
+                     Paragraph("Most Inactive Marketplaces", subheading_style)],
+                    [active_table, inactive_table]
+                ]
+                marketplace_table = Table(marketplace_table_data)
+                story.append(marketplace_table)
                     
             except Exception as e:
                 logger.error(f"Error creating gauge charts for group {group}: {e}")
@@ -988,6 +1012,13 @@ def create_monthly_report(year, month, force=False):
     subheading_style = styles['Heading2']
     normal_style = styles['Normal']
     
+    # Create a colored heading style for group headers
+    colored_group_style = ParagraphStyle(
+        'ColoredGroupHeading',
+        parent=heading_style,
+        textColor=colors.white,  # White text
+    )
+    
     # Build the PDF content
     story = []
     
@@ -1041,7 +1072,22 @@ def create_monthly_report(year, month, force=False):
             continue
             
         story.append(PageBreak())
-        story.append(Paragraph(f"Group {group} Details", heading_style))
+        
+        # Create colored header for group
+        group_color = GROUP_COLORS.get(group, colors.steelblue)
+        group_header_data = [[f"Group {group} Details"]]
+        group_header = Table(group_header_data, colWidths=[150*mm], rowHeights=[10*mm])
+        group_header.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), group_color),
+            ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 14),
+        ]))
+        story.append(group_header)
+        story.append(Spacer(1, 5*mm))
+        
         story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
         
         # Grouped bar chart for this group
@@ -1065,7 +1111,7 @@ def create_monthly_report(year, month, force=False):
                     story.append(legend)
                 
             # Add the gauge charts for this group - side by side
-            story.append(Spacer(1, 15*mm))
+            story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
             story.append(Paragraph("Activity Metrics", subheading_style))
                 
             # Get smartsheet data for gauges filtered by group
@@ -1105,27 +1151,29 @@ def create_monthly_report(year, month, force=False):
                 story.append(gauge_table)
                 
                 # Add marketplace activity metrics after the gauge charts
-                story.append(Spacer(1, 15*mm))
+                story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
                 story.append(Paragraph("Marketplace Activity", subheading_style))
                 
                 # Get marketplace activity data
                 most_active, most_inactive = get_marketplace_activity(group)
                 
-                # Create a table for most active marketplaces
-                story.append(Paragraph("Most Active Marketplaces", subheading_style))
+                # Create tables for most active and inactive marketplaces - SIDE BY SIDE
                 active_table = create_activity_table(most_active, "Most Active")
-                story.append(active_table)
-                story.append(Spacer(1, 5*mm))
-                
-                # Create a table for most inactive marketplaces
-                story.append(Paragraph("Most Inactive Marketplaces", subheading_style))
                 inactive_table = create_activity_table(most_inactive, "Most Inactive")
-                story.append(inactive_table)
+                
+                # Place tables side by side
+                marketplace_table_data = [
+                    [Paragraph("Most Active Marketplaces", subheading_style), 
+                     Paragraph("Most Inactive Marketplaces", subheading_style)],
+                    [active_table, inactive_table]
+                ]
+                marketplace_table = Table(marketplace_table_data)
+                story.append(marketplace_table)
                     
             except Exception as e:
                 logger.error(f"Error creating gauge charts for group {group}: {e}")
                 # Add a placeholder if there's an error
-                story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
+                story.append(Paragraph(f"Could not generate metrics: {str(e)}", normal_style))
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
