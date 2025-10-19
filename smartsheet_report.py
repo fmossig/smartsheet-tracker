@@ -57,13 +57,22 @@ GROUP_COLORS = {
     "NV": colors.HexColor("#00B4D8"),
 }
 
-# Phase names for better readability
+# Phase names for reference (now using Phase 1, Phase 2, etc. for display)
 PHASE_NAMES = {
-    "1": "Kontrolle",
-    "2": "BE",
-    "3": "K2",
-    "4": "C",
-    "5": "Reopen C2",
+    "1": "Phase 1",
+    "2": "Phase 2",
+    "3": "Phase 3",
+    "4": "Phase 4",
+    "5": "Phase 5",
+}
+
+# Phase colors
+PHASE_COLORS = {
+    "1": colors.HexColor("#1f77b4"),  # Blue
+    "2": colors.HexColor("#ff7f0e"),  # Orange
+    "3": colors.HexColor("#2ca02c"),  # Green
+    "4": colors.HexColor("#9467bd"),  # Purple
+    "5": colors.HexColor("#d62728"),  # Red
 }
 
 # User colors (will be generated dynamically)
@@ -202,7 +211,7 @@ def generate_user_colors(users):
     
     return USER_COLORS
 
-def make_group_bar_chart(data_dict, title, width=500, height=300):
+def make_group_bar_chart(data_dict, title, width=250, height=200):
     """Create a bar chart showing counts by group."""
     drawing = Drawing(width, height)
     
@@ -216,10 +225,10 @@ def make_group_bar_chart(data_dict, title, width=500, height=300):
     
     # Create the bar chart
     chart = VerticalBarChart()
-    chart.x = 50
-    chart.y = 50
-    chart.height = 200
-    chart.width = 400
+    chart.x = 30
+    chart.y = 30
+    chart.height = 130
+    chart.width = width - 60
     
     # Sort groups alphabetically
     sorted_keys = sorted(data_dict.keys())
@@ -232,7 +241,7 @@ def make_group_bar_chart(data_dict, title, width=500, height=300):
             chart.bars[0].fillColor = GROUP_COLORS[key]
             
     # Adjust labels
-    chart.categoryAxis.labels.fontSize = 10
+    chart.categoryAxis.labels.fontSize = 8
     chart.categoryAxis.labels.boxAnchor = 'n'
     chart.categoryAxis.labels.angle = 0
     chart.categoryAxis.labels.dy = -10
@@ -241,6 +250,7 @@ def make_group_bar_chart(data_dict, title, width=500, height=300):
     chart.valueAxis.valueMin = 0
     chart.valueAxis.valueMax = max(data_dict.values()) * 1.1 if data_dict else 10
     chart.valueAxis.valueStep = max(1, int(max(data_dict.values()) / 5)) if data_dict else 2
+    chart.valueAxis.labels.fontSize = 8
     
     # Add group colors
     for i, group in enumerate(sorted_keys):
@@ -250,7 +260,7 @@ def make_group_bar_chart(data_dict, title, width=500, height=300):
     drawing.add(chart)
     return drawing
 
-def make_phase_bar_chart(data_dict, title, width=500, height=300):
+def make_phase_bar_chart(data_dict, title, width=250, height=200):
     """Create a bar chart showing counts by phase."""
     drawing = Drawing(width, height)
     
@@ -264,20 +274,20 @@ def make_phase_bar_chart(data_dict, title, width=500, height=300):
     
     # Create the bar chart
     chart = VerticalBarChart()
-    chart.x = 50
-    chart.y = 50
-    chart.height = 200
-    chart.width = 400
+    chart.x = 30
+    chart.y = 30
+    chart.height = 130
+    chart.width = width - 60
     
     # Sort phases numerically
     sorted_keys = sorted(data_dict.keys(), key=lambda x: int(x) if x.isdigit() else 999)
     
     # Use phase names for display
-    chart.categoryAxis.categoryNames = [f"{k}: {PHASE_NAMES.get(k, '')}" for k in sorted_keys]
+    chart.categoryAxis.categoryNames = [f"{PHASE_NAMES.get(k, '')}" for k in sorted_keys]
     chart.data = [list(data_dict[k] for k in sorted_keys)]
     
     # Adjust labels
-    chart.categoryAxis.labels.fontSize = 10
+    chart.categoryAxis.labels.fontSize = 8
     chart.categoryAxis.labels.boxAnchor = 'n'
     chart.categoryAxis.labels.angle = 0
     chart.categoryAxis.labels.dy = -10
@@ -286,36 +296,22 @@ def make_phase_bar_chart(data_dict, title, width=500, height=300):
     chart.valueAxis.valueMin = 0
     chart.valueAxis.valueMax = max(data_dict.values()) * 1.1 if data_dict else 10
     chart.valueAxis.valueStep = max(1, int(max(data_dict.values()) / 5)) if data_dict else 2
+    chart.valueAxis.labels.fontSize = 8
     
-    # Add phase colors (blue to red spectrum)
-    phase_colors = {
-        "1": colors.HexColor("#1f77b4"),  # Blue
-        "2": colors.HexColor("#ff7f0e"),  # Orange
-        "3": colors.HexColor("#2ca02c"),  # Green
-        "4": colors.HexColor("#9467bd"),  # Purple
-        "5": colors.HexColor("#d62728"),  # Red
-    }
-    
+    # Add phase colors
     for i, phase in enumerate(sorted_keys):
-        chart.bars[(0, i)].fillColor = phase_colors.get(phase, colors.steelblue)
+        chart.bars[(0, i)].fillColor = PHASE_COLORS.get(phase, colors.steelblue)
     
     drawing.add(chart)
     return drawing
 
-def make_stacked_bar_chart_by_user(group, phase_user_data, title, width=500, height=400):
-    """Create a horizontal stacked bar chart showing user contributions per phase."""
+def make_group_detail_chart(group, phase_user_data, title, width=500, height=300):
+    """Create a horizontal grouped bar chart (not stacked) showing user contributions per phase."""
     drawing = Drawing(width, height)
     
     # Add title
     drawing.add(String(width/2, height-15, title,
                       fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
-    
-    # Create the bar chart
-    chart = HorizontalBarChart()
-    chart.x = 100  # More space for phase labels
-    chart.y = 50
-    chart.height = 250
-    chart.width = 350
     
     # Sort phases numerically
     phases = sorted(phase_user_data.keys(), key=lambda x: int(x) if x.isdigit() else 999)
@@ -329,20 +325,38 @@ def make_stacked_bar_chart_by_user(group, phase_user_data, title, width=500, hei
     # Generate consistent colors for users
     user_colors = generate_user_colors({user: 1 for user in all_users})
     
-    # Prepare data for stacked bars
-    data = []
-    for user in all_users:
-        user_data = []
-        for phase in phases:
-            user_data.append(phase_user_data.get(phase, {}).get(user, 0))
-        data.append(user_data)
+    # Create the bar chart
+    chart = HorizontalBarChart()
+    chart.x = 100  # More space for phase labels
+    chart.y = 50
+    chart.height = 200
+    chart.width = 350
     
-    # Set the data
-    chart.data = data
+    # Prepare data for grouped bars
+    data = []
+    for phase in phases:
+        phase_data = []
+        for user in all_users:
+            phase_data.append(phase_user_data.get(phase, {}).get(user, 0))
+        data.append(phase_data)
+    
+    # Transpose data for horizontal chart
+    transposed_data = []
+    for i in range(len(all_users)):
+        user_row = [data[j][i] for j in range(len(phases))]
+        transposed_data.append(user_row)
+    
+    # Set the data - each row is a user's data across phases
+    chart.data = transposed_data
     
     # Use phase names for categories
-    chart.categoryAxis.categoryNames = [f"{p}: {PHASE_NAMES.get(p, '')}" for p in phases]
+    chart.categoryAxis.categoryNames = [PHASE_NAMES.get(p, f"Phase {p}") for p in phases]
     chart.categoryAxis.labels.fontSize = 10
+    
+    # Set bar spacing to create groups
+    chart.groupSpacing = 10
+    chart.barSpacing = 2
+    chart.barWidth = 10
     
     # Value axis
     max_total = 0
@@ -361,18 +375,22 @@ def make_stacked_bar_chart_by_user(group, phase_user_data, title, width=500, hei
     
     drawing.add(chart)
     
-    # Add a legend for users
-    if all_users:
-        legend = Legend()
-        legend.alignment = 'right'
-        legend.x = 50
-        legend.y = height - 50
-        legend.columnMaximum = 8
-        legend.dxTextSpace = 5
-        legend.fontSize = 8
-        
-        legend.colorNamePairs = [(user_colors.get(user, colors.steelblue), user) for user in all_users]
-        drawing.add(legend)
+    # Return the chart and legend data separately
+    return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
+
+def create_horizontal_legend(color_name_pairs, width=500, height=30):
+    """Create a horizontal legend with the given color-name pairs."""
+    drawing = Drawing(width, height)
+    
+    # Calculate spacing
+    item_width = min(100, width / len(color_name_pairs) if color_name_pairs else 100)
+    
+    for i, (color, name) in enumerate(color_name_pairs):
+        # Draw color box
+        drawing.add(String(i * item_width + 15, height/2, name,
+                         fontName='Helvetica', fontSize=8))
+        drawing.add(String(i * item_width + 10, height/2, "■",
+                         fontName='Helvetica', fontSize=12, fillColor=color))
     
     return drawing
 
@@ -466,20 +484,20 @@ def create_weekly_report(start_date, end_date, force=False):
     story.append(summary_table)
     story.append(Spacer(1, 10*mm))
     
-    # Main page charts
+    # Main page charts - side by side
+    story.append(Paragraph("Activity Overview", heading_style))
     
-    # Chart 1: Group activity bar chart
-    story.append(Paragraph("Activity by Product Group", heading_style))
+    # Create both charts
     group_chart = make_group_bar_chart(metrics["groups"], "Changes by Group")
-    story.append(group_chart)
-    story.append(Spacer(1, 10*mm))
-    
-    # Chart 2: Phase activity bar chart
-    story.append(Paragraph("Activity by Phase", heading_style))
     phase_chart = make_phase_bar_chart(metrics["phases"], "Changes by Phase")
-    story.append(phase_chart)
     
-    # Group detail pages with stacked bar charts
+    # Put them in a table side by side
+    chart_table_data = [[group_chart, phase_chart]]
+    chart_table = Table(chart_table_data)
+    story.append(chart_table)
+    story.append(Spacer(1, 15*mm))
+    
+    # Group detail pages with grouped bar charts
     for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
         if not group:
             continue
@@ -488,15 +506,25 @@ def create_weekly_report(start_date, end_date, force=False):
         story.append(Paragraph(f"Group {group} Details", heading_style))
         story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
         
-        # Stacked bar chart for this group
+        # Grouped bar chart for this group
         phase_user_data = metrics["group_phase_user"].get(group, {})
         if phase_user_data:
-            stacked_chart = make_stacked_bar_chart_by_user(
+            chart, legend_data = make_group_detail_chart(
                 group, 
                 phase_user_data, 
                 f"User Activity by Phase for Group {group}"
             )
-            story.append(stacked_chart)
+            story.append(chart)
+            
+            # Add horizontal legend below
+            if legend_data:
+                # Split legend into chunks of 5 if there are many users
+                chunk_size = 5
+                legend_chunks = [legend_data[i:i+chunk_size] for i in range(0, len(legend_data), chunk_size)]
+                
+                for chunk in legend_chunks:
+                    legend = create_horizontal_legend(chunk, width=400)
+                    story.append(legend)
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
@@ -582,20 +610,20 @@ def create_monthly_report(year, month, force=False):
     story.append(summary_table)
     story.append(Spacer(1, 10*mm))
     
-    # Main page charts
+    # Main page charts - side by side
+    story.append(Paragraph("Activity Overview", heading_style))
     
-    # Chart 1: Group activity bar chart
-    story.append(Paragraph("Activity by Product Group", heading_style))
+    # Create both charts
     group_chart = make_group_bar_chart(metrics["groups"], "Changes by Group")
-    story.append(group_chart)
-    story.append(Spacer(1, 10*mm))
-    
-    # Chart 2: Phase activity bar chart
-    story.append(Paragraph("Activity by Phase", heading_style))
     phase_chart = make_phase_bar_chart(metrics["phases"], "Changes by Phase")
-    story.append(phase_chart)
     
-    # Group detail pages with stacked bar charts
+    # Put them in a table side by side
+    chart_table_data = [[group_chart, phase_chart]]
+    chart_table = Table(chart_table_data)
+    story.append(chart_table)
+    story.append(Spacer(1, 15*mm))
+    
+    # Group detail pages with grouped bar charts
     for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
         if not group:
             continue
@@ -604,15 +632,25 @@ def create_monthly_report(year, month, force=False):
         story.append(Paragraph(f"Group {group} Details", heading_style))
         story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
         
-        # Stacked bar chart for this group
+        # Grouped bar chart for this group
         phase_user_data = metrics["group_phase_user"].get(group, {})
         if phase_user_data:
-            stacked_chart = make_stacked_bar_chart_by_user(
+            chart, legend_data = make_group_detail_chart(
                 group, 
                 phase_user_data, 
                 f"User Activity by Phase for Group {group}"
             )
-            story.append(stacked_chart)
+            story.append(chart)
+            
+            # Add horizontal legend below
+            if legend_data:
+                # Split legend into chunks of 5 if there are many users
+                chunk_size = 5
+                legend_chunks = [legend_data[i:i+chunk_size] for i in range(0, len(legend_data), chunk_size)]
+                
+                for chunk in legend_chunks:
+                    legend = create_horizontal_legend(chunk, width=400)
+                    story.append(legend)
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
