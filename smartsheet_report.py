@@ -185,9 +185,20 @@ def collect_metrics(changes):
             
     return metrics
 
+# Update the generate_user_colors function to use your custom colors
 def generate_user_colors(users):
-    """Generate consistent colors for users."""
-    # Base colors
+    """Generate consistent colors for users with custom colors for specific users."""
+    # Custom colors for specific users
+    custom_colors = {
+        "DM": colors.HexColor("#223459"),
+        "EK": colors.HexColor("#6A5AAA"),
+        "HI": colors.HexColor("#B45082"),
+        "SM": colors.HexColor("#F9767F"),
+        "JHU": colors.HexColor("#FFB142"),
+        "LK": colors.HexColor("#FFDE70")
+    }
+    
+    # Base colors for other users
     base_colors = [
         colors.HexColor("#1f77b4"),  # Blue
         colors.HexColor("#ff7f0e"),  # Orange
@@ -204,11 +215,17 @@ def generate_user_colors(users):
     # Clear existing colors
     USER_COLORS.clear()
     
-    # Assign colors to users
-    sorted_users = sorted(users.keys())
-    for i, user in enumerate(sorted_users):
-        if user:  # Only assign colors to non-empty user names
-            USER_COLORS[user] = base_colors[i % len(base_colors)]
+    # First assign the custom colors
+    for user in users.keys():
+        if user in custom_colors:
+            USER_COLORS[user] = custom_colors[user]
+    
+    # Then assign colors to any remaining users
+    color_index = 0
+    for user in sorted(users.keys()):
+        if user and user not in USER_COLORS:
+            USER_COLORS[user] = base_colors[color_index % len(base_colors)]
+            color_index += 1
     
     return USER_COLORS
 
@@ -434,18 +451,32 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
     return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
     
 def create_horizontal_legend(color_name_pairs, width=500, height=30):
-    """Create a horizontal legend with the given color-name pairs."""
+    """Create a horizontal legend with the given color-name pairs with increased spacing."""
     drawing = Drawing(width, height)
     
     # Calculate spacing
-    item_width = min(100, width / len(color_name_pairs) if color_name_pairs else 100)
+    item_width = min(120, width / len(color_name_pairs) if color_name_pairs else 120)
     
     for i, (color, name) in enumerate(color_name_pairs):
-        # Draw color box
-        drawing.add(String(i * item_width + 15, height/2, name,
-                         fontName='Helvetica', fontSize=8))
-        drawing.add(String(i * item_width + 10, height/2, "■",
-                         fontName='Helvetica', fontSize=12, fillColor=color))
+        # Draw color box (square)
+        drawing.add(Rect(
+            i * item_width + 5,
+            height/2 - 5,
+            10,
+            10,
+            fillColor=color,
+            strokeColor=colors.black,
+            strokeWidth=0.5
+        ))
+        
+        # Draw name with increased spacing from the color square
+        drawing.add(String(
+            i * item_width + 25,  # Increased from +15 to +25 for more space
+            height/2,
+            name,
+            fontName='Helvetica', 
+            fontSize=8
+        ))
     
     return drawing
 
