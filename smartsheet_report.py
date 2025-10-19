@@ -858,6 +858,40 @@ def create_monthly_report(year, month, force=False):
     chart_table = Table(chart_table_data)
     story.append(chart_table)
     story.append(Spacer(1, 15*mm))
+
+    # Add the gauge charts - side by side
+    story.append(Paragraph("Activity Metrics", heading_style))
+    
+    # Get smartsheet data for gauges
+    try:
+        metrics_data = query_smartsheet_data()
+    
+        # Create both gauge charts
+        recent_gauge = draw_half_circle_gauge(
+            metrics_data["recent_percentage"],
+            metrics_data["recent_activity_items"],
+            "30-Day Activity",
+            color=colors.HexColor("#3498db")
+        )
+    
+        total_gauge = draw_full_gauge(
+            metrics_data["total_items"],
+            "Total Products",
+            color=GROUP_COLORS.get(list(metrics["groups"].keys())[0], colors.HexColor("#2ecc71"))
+            if metrics["groups"] else colors.HexColor("#2ecc71")
+        )
+        
+        # Put them in a table side by side
+        gauge_table_data = [[recent_gauge, total_gauge]]
+        gauge_table = Table(gauge_table_data)
+        story.append(gauge_table)
+    
+    except Exception as e:
+        logger.error(f"Error creating gauge charts: {e}")
+        # Add a placeholder if there's an error
+        story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
+        
+    story.append(Spacer(1, 15*mm))
     
     # Group detail pages with grouped bar charts
     for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
