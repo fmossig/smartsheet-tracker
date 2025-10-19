@@ -326,14 +326,14 @@ def make_phase_bar_chart(data_dict, title, width=250, height=200):
     drawing.add(chart)
     return drawing
 
-def make_group_detail_chart(group, phase_user_data, title, width=500, height=300):
+def make_group_detail_chart(group, phase_user_data, title, width=500, height=240): # Reduced from 300
     """Create a horizontal stacked bar chart showing user contributions per phase."""
     from reportlab.graphics.shapes import Rect
     
     drawing = Drawing(width, height)
     
     # Add title
-    drawing.add(String(width/2, height-15, title,
+    drawing.add(String(width/2, height-10, title, # Reduced from height-15
                       fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
     
     # Sort phases numerically
@@ -350,11 +350,11 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
     
     # Chart dimensions
     chart_x = 120
-    chart_y = 50
+    chart_y = 40  # Reduced from 50
     chart_width = 320
-    chart_height = 200
-    bar_height = 20
-    spacing = 10
+    chart_height = 160  # Reduced from 200
+    bar_height = 16     # Reduced from 20
+    spacing = 8         # Reduced from 10
     
     # Calculate maximum total for scale
     max_total = 1  # Minimum value to avoid division by zero
@@ -373,7 +373,7 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
             y_position + bar_height/2, 
             PHASE_NAMES.get(phase, f"Phase {phase}"),
             fontName='Helvetica', 
-            fontSize=10, 
+            fontSize=9,  # Reduced from 10
             textAnchor='end'
         ))
         
@@ -412,7 +412,7 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
                         y_position + bar_height/2,
                         str(value),
                         fontName='Helvetica',
-                        fontSize=8,
+                        fontSize=7,  # Reduced from 8
                         textAnchor='middle'
                     ))
                 
@@ -421,8 +421,8 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
     
     # Draw axis line
     drawing.add(Line(
-        chart_x, chart_y - 10,
-        chart_x + chart_width, chart_y - 10,
+        chart_x, chart_y - 8,  # Reduced from chart_y - 10
+        chart_x + chart_width, chart_y - 8,
         strokeWidth=1,
         strokeColor=colors.black
     ))
@@ -435,18 +435,18 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=300
         
         # Tick mark
         drawing.add(Line(
-            x_pos, chart_y - 10,
-            x_pos, chart_y - 15,
+            x_pos, chart_y - 8,
+            x_pos, chart_y - 12,
             strokeWidth=1,
             strokeColor=colors.black
         ))
         
         # Value label
         drawing.add(String(
-            x_pos, chart_y - 25,
+            x_pos, chart_y - 20,  # Reduced from chart_y - 25
             str(value),
             fontName='Helvetica',
-            fontSize=8,
+            fontSize=7,  # Reduced from 8
             textAnchor='middle'
         ))
     
@@ -489,6 +489,7 @@ def query_smartsheet_data(group=None):
     
     # Track counts
     total_items = 0
+    product_items = 0  # Count of actual products (rows with both Artikel and Amazon values)
     recent_activity_items = 0
     thirty_days_ago = datetime.now() - timedelta(days=30)
     
@@ -507,15 +508,38 @@ def query_smartsheet_data(group=None):
             sheet = client.Sheets.get_sheet(sheet_id)
             logger.info(f"Processing sheet {sheet_group} for activity metrics")
             
-            # Map column titles to IDs for the phase columns
+            # Map column titles to IDs for the phase columns and product definition columns
             phase_cols = {}
+            artikel_col_id = None
+            amazon_col_id = None
+            
             for col in sheet.columns:
                 if col.title in ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"]:
                     phase_cols[col.title] = col.id
+                elif col.title == "Artikel":
+                    artikel_col_id = col.id
+                elif col.title == "Amazon":
+                    amazon_col_id = col.id
             
             # Process each row
             for row in sheet.rows:
                 total_items += 1
+                
+                # Check if this row is a product (has both Artikel and Amazon values)
+                is_product = False
+                if artikel_col_id and amazon_col_id:
+                    has_artikel = False
+                    has_amazon = False
+                    
+                    for cell in row.cells:
+                        if cell.column_id == artikel_col_id and cell.value:
+                            has_artikel = True
+                        if cell.column_id == amazon_col_id and cell.value:
+                            has_amazon = True
+                    
+                    if has_artikel and has_amazon:
+                        is_product = True
+                        product_items += 1
                 
                 # Find the most recent date across all phase columns
                 most_recent_date = None
@@ -542,6 +566,7 @@ def query_smartsheet_data(group=None):
     
     return {
         "total_items": total_items,
+        "product_items": product_items,  # New field for actual products
         "recent_activity_items": recent_activity_items,
         "recent_percentage": recent_percentage
     }
@@ -741,7 +766,7 @@ def create_weekly_report(start_date, end_date, force=False):
                 )
                     
                 total_gauge = draw_full_gauge(
-                    metrics_data["total_items"],
+                    metrics_data["product_items"],  # Use product_items instead of total_items
                     "Total Products",
                     color=group_color
                 )
