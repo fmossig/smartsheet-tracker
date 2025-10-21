@@ -353,8 +353,17 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
     
     # Set data and labels
     pie.data = [hours for _, hours in chart_data]
+    pie.labels = [f"{cat}\n{hrs:.1f} Std" for cat, hrs in chart_data]
     
-    # Add values to slices
+    # Format the labels with percentages
+    if total_hours > 0:
+        formatted_labels = []
+        for category, hours in chart_data:
+            percentage = (hours / total_hours) * 100
+            formatted_labels.append(f"{percentage:.1f}%")
+        pie.slices.label_format = '%s'
+        
+    # Configure pie chart appearance
     pie.slices.strokeWidth = 0.5
     pie.slices.strokeColor = colors.white
     
@@ -374,18 +383,18 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
         colors.HexColor("#a6761d"),  # Brown
     ]
     
-    # Assign colors and add labels with values
+    # Assign colors to slices
     for i in range(len(chart_data)):
         pie.slices[i].fillColor = colorful_palette[i % len(colorful_palette)]
-        
-    # Create donut hole effect
-    pie.sideLabels = True
-    pie.simpleLabels = False
+    
+    # Set up the pie to show labels in a better way
+    pie.sideLabels = True  # Put labels to the side
+    pie.simpleLabels = False  # Use more control over labels
     
     # Add the pie to the drawing
     drawing.add(pie)
     
-    # Add legend manually - positioned to the right of the pie
+    # Add legend manually - positioned to the right
     legend_x = width - 160
     legend_y = height - 50
     legend_font_size = 8
@@ -410,39 +419,16 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
             strokeWidth=0.5
         ))
         
-        # Add category name
+        # Add category name with percentage
         percentage = (hours / total_hours * 100) if total_hours > 0 else 0
         drawing.add(String(
             legend_x + 12,
             y_pos + 4,
-            f"{category}",
+            f"{category} ({percentage:.1f}%)",
             fontName='Helvetica',
             fontSize=legend_font_size
         ))
     
-    # Add data labels inside or around the pie slices
-    for i, (category, hours) in enumerate(chart_data):
-        percentage = (hours / total_hours * 100) if total_hours > 0 else 0
-        
-        # Position values around the pie chart
-        angle = pie._findFirstSliceAngle(i) + (pie._findSliceAngleExtent(i) / 2)
-        angle_radians = math.radians(angle)
-        
-        # Position the label based on the angle
-        radius = pie.width/2 + 5
-        x = pie.x + radius * math.cos(angle_radians)
-        y = pie.y + radius * math.sin(angle_radians)
-        
-        # Add the percentage and hour values
-        drawing.add(String(
-            x, 
-            y,
-            f"{percentage:.1f}%",
-            fontName='Helvetica-Bold',
-            fontSize=9,
-            textAnchor='middle'
-        ))
-        
     # Add total hours at the bottom
     drawing.add(String(
         width/2,
