@@ -350,7 +350,7 @@ def create_activity_table(activity_data, title):
         return table
     
     # Create table data with header - SHORTENED HEADERS
-    table_data = [["Country", "Avg Days", "Products"]]  # Shorter header text
+    table_data = [["Country", "Avg Days"]]  # Shorter header text
     
     # Add data rows
     for country, avg_days, count in activity_data:
