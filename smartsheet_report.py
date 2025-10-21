@@ -107,16 +107,21 @@ def parse_date(date_str):
     if not date_str:
         return None
         
+    # Clean up common typos
+    cleaned = str(date_str).strip()
+    if cleaned and not cleaned[-1].isdigit():
+        cleaned = cleaned.rstrip('abcdefghijklmnopqrstuvwxyz')
+        
     # Try various formats
     for fmt in ('%Y-%m-%d', '%d.%m.%Y'):
         try:
-            return datetime.strptime(date_str, fmt).date()
+            return datetime.strptime(cleaned, fmt).date()
         except ValueError:
             continue
             
     try:
         # Try ISO format (catches many variations)
-        return datetime.fromisoformat(date_str).date()
+        return datetime.fromisoformat(cleaned).date()
     except:
         return None
 
@@ -1320,6 +1325,8 @@ def create_weekly_report(start_date, end_date, force=False):
     # Build the PDF
     doc.build(story)
     logger.info(f"Weekly report created: {filename}")
+    # Log the absolute path for debugging
+    logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
 
 def create_monthly_report(year, month, force=False):
@@ -1462,3 +1469,169 @@ def create_monthly_report(year, month, force=False):
                 for chunk in legend_chunks:
                     legend = create_horizontal_legend(chunk, width=400)
                     story.append(legend)
+                
+            # Add the gauge charts for this group - side by side
+            story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
+            story.append(Paragraph("Activity Metrics", subheading_style))
+                
+            # Get smartsheet data for gauges filtered by group
+            try:
+                metrics_data = query_smartsheet_data(group)
+                
+                # Get color for this group
+                group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
+                
+                # Get the fixed total products for this group
+                total_products = TOTAL_PRODUCTS.get(group, 0)
+                
+                # Calculate correct percentage based on fixed product count
+                if total_products > 0:
+                    correct_percentage = (metrics_data["recent_activity_items"] / total_products) * 100
+                else:
+                    correct_percentage = 0
+                
+                # Create both gauge charts with same color
+                recent_gauge = draw_half_circle_gauge(
+                    correct_percentage,  # Use our recalculated percentage
+                    metrics_data["recent_activity_items"],
+                    "30-Day Activity",
+                    color=group_color
+                )
+                
+                # Use fixed total products value
+                total_gauge = draw_full_gauge(
+                    total_products,
+                    "Total Products",
+                    color=group_color
+                )
+                
+                # Put them in a table side by side
+                gauge_table_data = [[recent_gauge, total_gauge]]
+                gauge_table = Table(gauge_table_data)
+                story.append(gauge_table)
+                
+                # Add marketplace activity metrics after the gauge charts
+                story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
+                story.append(Paragraph("Marketplace Activity", subheading_style))
+                
+                # Get marketplace activity data
+                most_active, most_inactive = get_marketplace_activity(group)
+                
+                # Create tables for most active and inactive marketplaces - SIDE BY SIDE
+                active_table = create_activity_table(most_active, "Most Active")
+                inactive_table = create_activity_table(most_inactive, "Most Inactive")
+                
+                # Place tables side by side with FIXED WIDTHS to prevent overflow
+                marketplace_table_data = [
+                    [Paragraph("Most Active", subheading_style), 
+                     Paragraph("Most Inactive", subheading_style)],
+                    [active_table, inactive_table]
+                ]
+                marketplace_table = Table(marketplace_table_data, colWidths=[75*mm, 75*mm])  # Fixed column widths
+                marketplace_table.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ('ALIGN', (0,0), (-1,0), 'CENTER'),
+                ]))
+                story.append(marketplace_table)
+                    
+            except Exception as e:
+                logger.error(f"Error creating gauge charts for group {group}: {e}")
+                # Add a placeholder if there's an error
+                story.append(Paragraph(f"Could not generate metrics: {str(e)}", normal_style))
+        else:
+            story.append(Paragraph("No detailed data available for this group", normal_style))
+    
+    # Add special activities section
+    add_special_activities_section(story)
+    
+    # Build the PDF
+    doc.build(story)
+    logger.info(f"Monthly report created: {filename}")
+    # Log the absolute path for debugging
+    logger.info(f"Report file created at: {os.path.abspath(filename)}")
+    return filename
+
+def get_previous_week():
+    """Get the start and end dates for the previous week (Monday to Sunday)."""
+    today = date.today()
+    previous_week_end = today - timedelta(days=today.weekday() + 1)
+    previous_week_start = previous_week_end - timedelta(days=6)
+    return previous_week_start, previous_week_end
+
+def get_current_week():
+    """Get the start and end dates for the current week (Monday to today)."""
+    today = date.today()
+    start = today - timedelta(days=today.weekday())  # Monday
+    end = today
+    return start, end
+
+def get_previous_month():
+    """Get the year and month for the previous month."""
+    today = date.today()
+    if today.month == 1:
+        return today.year - 1, 12
+    else:
+        return today.year, today.month - 1
+
+def get_current_month():
+    """Get the year and month for the current month."""
+    today = date.today()
+    return today.year, today.month
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Generate Smartsheet change reports")
+    report_type = parser.add_mutually_exclusive_group(required=True)
+    report_type.add_argument("--weekly", action="store_true", help="Generate weekly report")
+    report_type.add_argument("--monthly", action="store_true", help="Generate monthly report")
+    
+    parser.add_argument("--year", type=int, help="Year for report (defaults to current year)")
+    parser.add_argument("--month", type=int, help="Month number for monthly report")
+    parser.add_argument("--week", type=int, help="ISO week number for weekly report")
+    parser.add_argument("--previous", action="store_true", help="Generate report for previous week/month")
+    parser.add_argument("--current", action="store_true", help="Generate report for current week/month to date")
+    parser.add_argument("--force", action="store_true", help="Force report generation even with no data")
+    
+    args = parser.parse_args()
+    
+    try:
+        if args.weekly:
+            if args.previous:
+                start_date, end_date = get_previous_week()
+                filename = create_weekly_report(start_date, end_date, force=args.force)
+            elif args.current:
+                start_date, end_date = get_current_week()
+                filename = create_weekly_report(start_date, end_date, force=args.force)
+            elif args.year and args.week:
+                # Calculate date from ISO week
+                start_date = datetime.fromisocalendar(args.year, args.week, 1).date()
+                end_date = start_date + timedelta(days=6)
+                filename = create_weekly_report(start_date, end_date, force=args.force)
+            else:
+                logger.error("For weekly reports, specify --previous OR --current OR (--year and --week)")
+                exit(1)
+                
+        elif args.monthly:
+            if args.previous:
+                year, month = get_previous_month()
+                filename = create_monthly_report(year, month, force=args.force)
+            elif args.current:
+                year, month = get_current_month()
+                filename = create_monthly_report(year, month, force=args.force)
+            elif args.year and args.month:
+                filename = create_monthly_report(args.year, args.month, force=args.force)
+            else:
+                logger.error("For monthly reports, specify --previous OR --current OR (--year and --month)")
+                exit(1)
+                
+        if filename:
+            logger.info(f"Report successfully generated: {filename}")
+            exit(0)
+        else:
+            logger.warning("Report generation completed but no file was created")
+            exit(1)
+            
+    except Exception as e:
+        logger.error(f"Error generating report: {e}", exc_info=True)
+        exit(1)
