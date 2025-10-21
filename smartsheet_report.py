@@ -951,22 +951,22 @@ def collect_user_group_data(metrics, target_user):
     return user_data
 
 def make_user_detail_chart(user, group_phase_data, width=500, height=200):
-    """Create a horizontal stacked bar chart showing user's work across groups."""
+    """Create a horizontal stacked bar chart showing user's work across phases with groups as segments."""
     drawing = Drawing(width, height)
     
     # Add title
     drawing.add(String(width/2, height-10,
-                      f"Activity by Product Group for {user}",
+                      f"Activity by Phase for {user}",
                       fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
-    
-    # Sort groups alphabetically
-    groups = sorted(group_phase_data.keys())
     
     # Get all phases across all groups
     all_phases = set()
     for phase_data in group_phase_data.values():
         all_phases.update(phase_data.keys())
     all_phases = sorted(all_phases, key=lambda x: int(x) if x.isdigit() else 999)
+    
+    # Sort groups alphabetically
+    groups = sorted(group_phase_data.keys())
     
     # Chart dimensions
     chart_x = 120
@@ -978,36 +978,33 @@ def make_user_detail_chart(user, group_phase_data, width=500, height=200):
     
     # Calculate maximum total for scale
     max_total = 1  # Minimum value to avoid division by zero
-    for group in groups:
-        group_total = sum(group_phase_data.get(group, {}).values())
-        if group_total > max_total:
-            max_total = group_total
+    for phase in all_phases:
+        phase_total = 0
+        for group in groups:
+            phase_total += group_phase_data.get(group, {}).get(phase, 0)
+        if phase_total > max_total:
+            max_total = phase_total
     
-    # Draw each group as a stacked bar
-    for i, group in enumerate(groups):
+    # Draw each phase as a stacked bar
+    for i, phase in enumerate(all_phases):
         y_position = chart_y + (bar_height + spacing) * i
         
-        # Add group label
-        group_color = GROUP_COLORS.get(group, colors.steelblue)
+        # Add phase label
         drawing.add(String(
             chart_x - 10, 
             y_position + bar_height/2, 
-            f"Group {group}",
+            PHASE_NAMES.get(phase, f"Phase {phase}"),
             fontName='Helvetica-Bold', 
             fontSize=8,
-            textAnchor='end',
-            fillColor=group_color
+            textAnchor='end'
         ))
-        
-        # Get phase data for this group
-        phase_data = group_phase_data.get(group, {})
         
         # Starting position for first segment
         x_start = chart_x
         
-        # Draw each phase contribution as a colored segment
-        for phase in all_phases:
-            value = phase_data.get(phase, 0)
+        # Draw each group contribution as a colored segment
+        for group in groups:
+            value = group_phase_data.get(group, {}).get(phase, 0)
             if value > 0:
                 # Calculate width of this segment proportional to its value
                 segment_width = (value / max_total) * chart_width
@@ -1018,7 +1015,7 @@ def make_user_detail_chart(user, group_phase_data, width=500, height=200):
                     y_position, 
                     segment_width, 
                     bar_height, 
-                    fillColor=PHASE_COLORS.get(phase, colors.steelblue),
+                    fillColor=GROUP_COLORS.get(group, colors.steelblue),
                     strokeColor=colors.black,
                     strokeWidth=0.5
                 )
@@ -1069,35 +1066,10 @@ def make_user_detail_chart(user, group_phase_data, width=500, height=200):
             textAnchor='middle'
         ))
     
-    # Add phase legend at the bottom
-    legend_y = chart_y - 35
-    legend_x = chart_x
-    legend_width = chart_width / len(all_phases)
+    # Create legend data for groups
+    legend_data = [(GROUP_COLORS.get(group, colors.steelblue), f"Group {group}") for group in groups]
     
-    for i, phase in enumerate(all_phases):
-        x_pos = legend_x + i * legend_width
-        
-        # Add color box
-        drawing.add(Rect(
-            x_pos,
-            legend_y,
-            8,
-            8,
-            fillColor=PHASE_COLORS.get(phase, colors.steelblue),
-            strokeColor=colors.black,
-            strokeWidth=0.5
-        ))
-        
-        # Add phase name
-        drawing.add(String(
-            x_pos + 12,
-            legend_y + 4,
-            PHASE_NAMES.get(phase, f"Phase {phase}"),
-            fontName='Helvetica',
-            fontSize=6
-        ))
-    
-    return drawing
+    return drawing, legend_data
 
 def create_user_group_distribution_chart(group_phase_data, user, width=500, height=250):
     """Create a pie chart showing distribution of user's work across product groups."""
@@ -1384,7 +1356,11 @@ def add_user_details_section(story, metrics):
     sorted_users = sorted(active_users.items(), key=lambda x: x[1], reverse=True)
     
     # Process each user
-    for user, count in sorted_users:
+    for i, (user, count) in enumerate(sorted_users):
+        # Add page break between users (but not before the first one)
+        if i > 0:
+            story.append(PageBreak())
+        
         # Create colored header for user
         user_color = USER_COLORS.get(user, colors.steelblue)
         user_header_data = [[f"User: {user}"]]
@@ -1402,21 +1378,22 @@ def add_user_details_section(story, metrics):
         
         # Add user activity summary
         story.append(Paragraph(f"Total changes: {count}", normal_style))
+        story.append(Spacer(1, 5*mm))
         
         # Create user's activity by group stacked bar chart
         user_group_data = collect_user_group_data(metrics, user)
         if user_group_data:
-            chart = make_user_detail_chart(user, user_group_data)
+            chart, legend_data = make_user_detail_chart(user, user_group_data)
             story.append(chart)
-            story.append(Spacer(1, 10*mm))
             
-            # Add group distribution pie chart
-            pie_chart = create_user_group_distribution_chart(user_group_data, user)
-            story.append(pie_chart)
-            story.append(Spacer(1, 15*mm))
+            # Add legend for groups
+            if legend_data:
+                legend = create_horizontal_legend(legend_data, width=400)
+                story.append(legend)
+                
+            # No group distribution pie chart as requested
         else:
             story.append(Paragraph("No detailed data available for this user.", normal_style))
-
 def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
     # Generate output filename
