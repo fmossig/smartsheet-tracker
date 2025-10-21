@@ -1312,7 +1312,7 @@ def add_special_activities_section(story):
     ))
     story.append(Spacer(1, 5*mm))
     
-    # Create and add pie chart
+    # Create and add pie chart - THIS MUST REMAIN
     pie_chart = create_activities_pie_chart(category_hours, total_hours)
     story.append(pie_chart)
     
