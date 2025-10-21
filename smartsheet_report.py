@@ -302,6 +302,100 @@ def get_special_activities(days=30):
         logger.error(f"Error fetching special activities: {e}", exc_info=True)
         return generate_sample_special_activities()
 
+def get_user_special_activities(user_name, days=30):
+    """
+    Fetch special activities for a specific user.
+    
+    Args:
+        user_name: The name of the user to filter for
+        days: Number of days to look back (default 30)
+    
+    Returns:
+        Tuple of (sorted_category_hours, total_hours) containing activity data
+    """
+    client = smartsheet.Smartsheet(token)
+    
+    try:
+        # Get the special activities sheet
+        sheet_id = SHEET_IDS.get("SPECIAL")
+        sheet = client.Sheets.get_sheet(sheet_id)
+        
+        # Current date for calculating the date range
+        current_date = datetime.now().date()
+        cutoff_date = current_date - timedelta(days=days)
+        
+        # Map column titles to IDs
+        col_map = {col.title: col.id for col in sheet.columns}
+        
+        # Check if required columns exist
+        required_columns = ["Mitarbeiter", "Datum", "Kategorie", "Arbeitszeit in Std"]
+        missing_columns = [col for col in required_columns if col not in col_map]
+        if missing_columns:
+            logger.warning(f"Missing columns in special activities sheet: {missing_columns}")
+            return [], 0
+        
+        # Extract data from rows for this specific user
+        activities = []
+        
+        for row in sheet.rows:
+            activity = {}
+            user_match = False
+            
+            # Extract cell values
+            for cell in row.cells:
+                for col_name, col_id in col_map.items():
+                    if cell.column_id == col_id and cell.value is not None:
+                        activity[col_name] = cell.value
+                        
+                        # Check if this is the right user
+                        if col_name == "Mitarbeiter" and cell.value == user_name:
+                            user_match = True
+            
+            # Skip if not the user we're looking for or missing key data
+            if not user_match or not activity.get("Kategorie") or not activity.get("Arbeitszeit in Std"):
+                continue
+                
+            # Parse date
+            if "Datum" in activity:
+                try:
+                    activity_date = parse_date(activity["Datum"])
+                    if activity_date and activity_date >= cutoff_date:
+                        # Convert hours from string to float (handling comma as decimal separator)
+                        if "Arbeitszeit in Std" in activity:
+                            hours_str = str(activity["Arbeitszeit in Std"]).replace(',', '.')
+                            try:
+                                activity["Hours"] = float(hours_str)
+                            except ValueError:
+                                activity["Hours"] = 0
+                        else:
+                            activity["Hours"] = 0
+                            
+                        activities.append(activity)
+                except Exception as e:
+                    logger.debug(f"Error parsing date in special activities: {e}")
+        
+        # Group by category and sum hours
+        category_hours = defaultdict(float)
+        for activity in activities:
+            category = activity.get("Kategorie", "Unknown")
+            hours = activity.get("Hours", 0)
+            category_hours[category] += hours
+        
+        # Sort by hours descending
+        sorted_categories = sorted(category_hours.items(), key=lambda x: x[1], reverse=True)
+        
+        # Calculate total hours
+        total_hours = sum(category_hours.values())
+        
+        logger.info(f"User {user_name}: Found {len(activities)} special activities in the last {days} days")
+        logger.info(f"User {user_name}: Found {len(category_hours)} categories with {total_hours:.1f} total hours")
+        
+        return sorted_categories, total_hours
+        
+    except Exception as e:
+        logger.error(f"Error fetching special activities for user {user_name}: {e}")
+        return [], 0
+
 def generate_sample_special_activities():
     """Generate sample special activities data for testing and fallback."""
     # Sample data similar to the example image
@@ -1383,6 +1477,9 @@ def add_user_details_section(story, metrics):
         # Create user's activity by group stacked bar chart
         user_group_data = collect_user_group_data(metrics, user)
         if user_group_data:
+            # Add product activity section
+            story.append(Paragraph("Product Activity", subheading_style))
+            
             chart, legend_data = make_user_detail_chart(user, user_group_data)
             story.append(chart)
             
@@ -1391,9 +1488,33 @@ def add_user_details_section(story, metrics):
                 legend = create_horizontal_legend(legend_data, width=400)
                 story.append(legend)
                 
-            # No group distribution pie chart as requested
+            story.append(Spacer(1, 10*mm))
         else:
-            story.append(Paragraph("No detailed data available for this user.", normal_style))
+            story.append(Paragraph("No detailed product data available for this user.", normal_style))
+            story.append(Spacer(1, 5*mm))
+        
+        # Add user's special activities section
+        story.append(Paragraph("Special Activities", subheading_style))
+        
+        # Get user's special activities
+        category_hours, total_hours = get_user_special_activities(user)
+        
+        if total_hours > 0:
+            story.append(Paragraph(
+                f"Special activities in the last 30 days. Total hours: {total_hours:.1f}",
+                normal_style
+            ))
+            
+            # Create and add pie chart for this user's activities
+            pie_chart = create_activities_pie_chart(category_hours, total_hours)
+            story.append(pie_chart)
+        else:
+            story.append(Paragraph(
+                f"No special activities recorded in the last 30 days.",
+                normal_style
+            ))
+
+
 def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
     # Generate output filename
