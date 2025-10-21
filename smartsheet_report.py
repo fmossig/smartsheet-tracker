@@ -934,6 +934,256 @@ def create_horizontal_legend(color_name_pairs, width=500, height=30):
         ))
     
     return drawing
+
+def collect_user_group_data(metrics, target_user):
+    """Collect data about a user's activity across different product groups."""
+    user_data = defaultdict(lambda: defaultdict(int))
+    
+    # Go through the group_phase_user data and flip it for user-centric view
+    for group, phase_data in metrics["group_phase_user"].items():
+        for phase, user_data_dict in phase_data.items():
+            if target_user in user_data_dict:
+                user_data[group][phase] = user_data_dict[target_user]
+    
+    return user_data
+
+def make_user_detail_chart(user, group_phase_data, width=500, height=200):
+    """Create a horizontal stacked bar chart showing user's work across groups."""
+    drawing = Drawing(width, height)
+    
+    # Add title
+    drawing.add(String(width/2, height-10,
+                      f"Activity by Product Group for {user}",
+                      fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
+    
+    # Sort groups alphabetically
+    groups = sorted(group_phase_data.keys())
+    
+    # Get all phases across all groups
+    all_phases = set()
+    for phase_data in group_phase_data.values():
+        all_phases.update(phase_data.keys())
+    all_phases = sorted(all_phases, key=lambda x: int(x) if x.isdigit() else 999)
+    
+    # Chart dimensions
+    chart_x = 120
+    chart_y = 30
+    chart_width = 320
+    chart_height = 130
+    bar_height = 14
+    spacing = 6
+    
+    # Calculate maximum total for scale
+    max_total = 1  # Minimum value to avoid division by zero
+    for group in groups:
+        group_total = sum(group_phase_data.get(group, {}).values())
+        if group_total > max_total:
+            max_total = group_total
+    
+    # Draw each group as a stacked bar
+    for i, group in enumerate(groups):
+        y_position = chart_y + (bar_height + spacing) * i
+        
+        # Add group label
+        group_color = GROUP_COLORS.get(group, colors.steelblue)
+        drawing.add(String(
+            chart_x - 10, 
+            y_position + bar_height/2, 
+            f"Group {group}",
+            fontName='Helvetica-Bold', 
+            fontSize=8,
+            textAnchor='end',
+            fillColor=group_color
+        ))
+        
+        # Get phase data for this group
+        phase_data = group_phase_data.get(group, {})
+        
+        # Starting position for first segment
+        x_start = chart_x
+        
+        # Draw each phase contribution as a colored segment
+        for phase in all_phases:
+            value = phase_data.get(phase, 0)
+            if value > 0:
+                # Calculate width of this segment proportional to its value
+                segment_width = (value / max_total) * chart_width
+                
+                # Draw segment
+                rect = Rect(
+                    x_start, 
+                    y_position, 
+                    segment_width, 
+                    bar_height, 
+                    fillColor=PHASE_COLORS.get(phase, colors.steelblue),
+                    strokeColor=colors.black,
+                    strokeWidth=0.5
+                )
+                drawing.add(rect)
+                
+                # Add value label if segment is wide enough
+                if segment_width > 20:
+                    drawing.add(String(
+                        x_start + segment_width/2,
+                        y_position + bar_height/2,
+                        str(value),
+                        fontName='Helvetica',
+                        fontSize=6,
+                        textAnchor='middle'
+                    ))
+                
+                # Move x position for next segment
+                x_start += segment_width
+    
+    # Draw axis line
+    drawing.add(Line(
+        chart_x, chart_y - 6,
+        chart_x + chart_width, chart_y - 6,
+        strokeWidth=1,
+        strokeColor=colors.black
+    ))
+    
+    # Add scale markers
+    scale_steps = 5
+    for i in range(scale_steps + 1):
+        x_pos = chart_x + (i / scale_steps) * chart_width
+        value = int((i / scale_steps) * max_total)
+        
+        # Tick mark
+        drawing.add(Line(
+            x_pos, chart_y - 6,
+            x_pos, chart_y - 10,
+            strokeWidth=1,
+            strokeColor=colors.black
+        ))
+        
+        # Value label
+        drawing.add(String(
+            x_pos, chart_y - 18,
+            str(value),
+            fontName='Helvetica',
+            fontSize=6,
+            textAnchor='middle'
+        ))
+    
+    # Add phase legend at the bottom
+    legend_y = chart_y - 35
+    legend_x = chart_x
+    legend_width = chart_width / len(all_phases)
+    
+    for i, phase in enumerate(all_phases):
+        x_pos = legend_x + i * legend_width
+        
+        # Add color box
+        drawing.add(Rect(
+            x_pos,
+            legend_y,
+            8,
+            8,
+            fillColor=PHASE_COLORS.get(phase, colors.steelblue),
+            strokeColor=colors.black,
+            strokeWidth=0.5
+        ))
+        
+        # Add phase name
+        drawing.add(String(
+            x_pos + 12,
+            legend_y + 4,
+            PHASE_NAMES.get(phase, f"Phase {phase}"),
+            fontName='Helvetica',
+            fontSize=6
+        ))
+    
+    return drawing
+
+def create_user_group_distribution_chart(group_phase_data, user, width=500, height=250):
+    """Create a pie chart showing distribution of user's work across product groups."""
+    drawing = Drawing(width, height)
+    
+    # Add title
+    drawing.add(String(width/2, height-20,
+                      f"Group Distribution for {user} (Last 30 Days)",
+                      fontName='Helvetica-Bold', fontSize=12, textAnchor='middle'))
+    
+    # Calculate totals for each group
+    group_totals = {}
+    for group, phase_data in group_phase_data.items():
+        group_totals[group] = sum(phase_data.values())
+    
+    # Skip if no data
+    if not group_totals or sum(group_totals.values()) == 0:
+        drawing.add(String(width/2, height/2, "No data available",
+                          fontName='Helvetica-Italic', fontSize=12, textAnchor='middle'))
+        return drawing
+    
+    # Create half-circle gauges for each group
+    total_changes = sum(group_totals.values())
+    
+    # Create pie chart data
+    from reportlab.graphics.charts.piecharts import Pie
+    
+    pie = Pie()
+    pie.x = width * 0.3  # Position left of center
+    pie.y = height / 2
+    pie.width = min(width, height) * 0.4
+    pie.height = min(width, height) * 0.4
+    
+    # Sort groups by count
+    sorted_groups = sorted(group_totals.items(), key=lambda x: x[1], reverse=True)
+    
+    # Set data
+    pie.data = [count for _, count in sorted_groups]
+    
+    # Set colors
+    for i, (group, _) in enumerate(sorted_groups):
+        if i < len(pie.slices):
+            pie.slices[i].fillColor = GROUP_COLORS.get(group, colors.steelblue)
+    
+    # Add the pie to the drawing
+    drawing.add(pie)
+    
+    # Add legend manually
+    legend_x = width * 0.65  # Position to the right of pie
+    legend_y = height - 50
+    legend_font_size = 8
+    line_height = legend_font_size * 1.5
+    
+    for i, (group, count) in enumerate(sorted_groups):
+        y_pos = legend_y - (i * line_height)
+        
+        # Add color box
+        drawing.add(Rect(
+            legend_x, 
+            y_pos, 
+            8, 
+            8, 
+            fillColor=GROUP_COLORS.get(group, colors.steelblue),
+            strokeColor=colors.black,
+            strokeWidth=0.5
+        ))
+        
+        # Add group name with percentage
+        percentage = (count / total_changes * 100) if total_changes > 0 else 0
+        drawing.add(String(
+            legend_x + 12,
+            y_pos + 4,
+            f"Group {group}: {count} ({percentage:.1f}%)",
+            fontName='Helvetica',
+            fontSize=legend_font_size
+        ))
+    
+    # Add total at the bottom
+    drawing.add(String(
+        width/2,
+        30,
+        f"Total changes: {total_changes}",
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        textAnchor='middle'
+    ))
+    
+    return drawing
+    
 def query_smartsheet_data(group=None):
     """Query raw Smartsheet data to get activity metrics, optionally filtered by group."""
     client = smartsheet.Smartsheet(token)
@@ -1098,6 +1348,71 @@ def add_special_activities_section(story):
     # Create and add breakdown table
     breakdown_table = create_special_activities_breakdown(category_hours, total_hours)
     story.append(breakdown_table)
+
+def add_user_details_section(story, metrics):
+    """Add a section showing details for each active user."""
+    styles = getSampleStyleSheet()
+    heading_style = styles['Heading1']
+    subheading_style = styles['Heading2']
+    normal_style = styles['Normal']
+    
+    # Add page break before user details section
+    story.append(PageBreak())
+    
+    # Add section header
+    story.append(Paragraph("User Activity Analysis", heading_style))
+    story.append(Spacer(1, 5*mm))
+    
+    # Add explanation
+    story.append(Paragraph(
+        "Detailed breakdown of activity by user across product groups in the last 30 days.",
+        normal_style
+    ))
+    story.append(Spacer(1, 10*mm))
+    
+    # Get active users (excluding empty user names)
+    active_users = {user: count for user, count in metrics["users"].items() if user and user.strip()}
+    
+    if not active_users:
+        story.append(Paragraph("No active users found in this period.", normal_style))
+        return
+    
+    # Sort users by activity count
+    sorted_users = sorted(active_users.items(), key=lambda x: x[1], reverse=True)
+    
+    # Process each user
+    for user, count in sorted_users:
+        # Create colored header for user
+        user_color = USER_COLORS.get(user, colors.steelblue)
+        user_header_data = [[f"User: {user}"]]
+        user_header = Table(user_header_data, colWidths=[150*mm], rowHeights=[10*mm])
+        user_header.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), user_color),
+            ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 14),
+        ]))
+        story.append(user_header)
+        story.append(Spacer(1, 5*mm))
+        
+        # Add user activity summary
+        story.append(Paragraph(f"Total changes: {count}", normal_style))
+        
+        # Create user's activity by group stacked bar chart
+        user_group_data = collect_user_group_data(metrics, user)
+        if user_group_data:
+            chart = make_user_detail_chart(user, user_group_data)
+            story.append(chart)
+            story.append(Spacer(1, 10*mm))
+            
+            # Add group distribution pie chart
+            pie_chart = create_user_group_distribution_chart(user_group_data, user)
+            story.append(pie_chart)
+            story.append(Spacer(1, 15*mm))
+        else:
+            story.append(Paragraph("No detailed data available for this user.", normal_style))
 
 def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
@@ -1304,6 +1619,8 @@ def create_weekly_report(start_date, end_date, force=False):
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
+    # Add user details section
+    add_user_details_section(story, metrics)
     # Add special activities section
     add_special_activities_section(story)
     
@@ -1521,6 +1838,8 @@ def create_monthly_report(year, month, force=False):
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
+    # Add user details section
+    add_user_details_section(story, metrics)
     # Add special activities section
     add_special_activities_section(story)
     
