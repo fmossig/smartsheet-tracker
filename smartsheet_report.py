@@ -380,7 +380,7 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
     
     # Add legend manually - positioned to the right
     legend_x = width * 0.55
-    legend_y = height - 40
+    legend_y = height / 2.5
     legend_font_size = 8
     line_height = legend_font_size * 1.5
     
