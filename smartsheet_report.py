@@ -1457,4 +1457,8 @@ def create_monthly_report(year, month, force=False):
             if legend_data:
                 # Split legend into chunks of 5 if there are many users
                 chunk_size = 5
-                legend_chunks = [legend_data[i:i+
+                legend_chunks = [legend_data[i:i+chunk_size] for i in range(0, len(legend_data), chunk_size)]
+                
+                for chunk in legend_chunks:
+                    legend = create_horizontal_legend(chunk, width=400)
+                    story.append(legend)
