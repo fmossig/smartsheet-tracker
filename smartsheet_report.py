@@ -179,7 +179,7 @@ def collect_metrics(changes):
         metrics["phases"] = {"1": 3, "2": 4, "3": 2, "4": 1, "5": 3}
         
         # Sample user data for each group
-        sample_users = ["User A", "User B", "User C", "User D"]
+        sample_users = ["DM", "EK", "HI", "SM", "JHU", "LK"]
         for group in metrics["groups"]:
             for phase in metrics["phases"]:
                 for user in sample_users:
@@ -334,10 +334,10 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
     
     # Create the pie chart
     pie = Pie()
-    pie.x = width / 2
-    pie.y = height / 2 - 20
-    pie.width = min(width, height) * 0.6
-    pie.height = min(width, height) * 0.6
+    pie.x = width / 3
+    pie.y = height / 2
+    pie.width = min(width, height) * 0.45
+    pie.height = min(width, height) * 0.45
     
     # Limit to top categories if there are too many
     max_slices = 12
@@ -379,8 +379,8 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
     drawing.add(pie)
     
     # Add legend manually - positioned to the right
-    legend_x = width - 160
-    legend_y = height - 50
+    legend_x = width - 140
+    legend_y = height - 40
     legend_font_size = 8
     line_height = legend_font_size * 1.5
     
