@@ -1506,7 +1506,7 @@ def add_user_details_section(story, metrics):
             ))
             
             # Create and add pie chart for this user's activities
-            pie_chart = create_activities_pie_chart(category_hours, total_hours, width=350, height=300)
+            pie_chart = create_activities_pie_chart(category_hours, total_hours, width=350, height=250)
             story.append(pie_chart)
         else:
             story.append(Paragraph(
