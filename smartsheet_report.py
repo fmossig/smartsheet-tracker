@@ -351,21 +351,8 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
     else:
         chart_data = category_hours
     
-    # Set data and labels
+    # Set data and labels - don't set any labels on the pie directly
     pie.data = [hours for _, hours in chart_data]
-    pie.labels = [f"{cat}\n{hrs:.1f} Std" for cat, hrs in chart_data]
-    
-    # Format the labels with percentages
-    if total_hours > 0:
-        formatted_labels = []
-        for category, hours in chart_data:
-            percentage = (hours / total_hours) * 100
-            formatted_labels.append(f"{percentage:.1f}%")
-        pie.slices.label_format = '%s'
-        
-    # Configure pie chart appearance
-    pie.slices.strokeWidth = 0.5
-    pie.slices.strokeColor = colors.white
     
     # Custom colorful palette for slices
     colorful_palette = [
@@ -383,13 +370,10 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
         colors.HexColor("#a6761d"),  # Brown
     ]
     
-    # Assign colors to slices
+    # Assign colors to slices - only set fillColor which is safe
     for i in range(len(chart_data)):
-        pie.slices[i].fillColor = colorful_palette[i % len(colorful_palette)]
-    
-    # Set up the pie to show labels in a better way
-    pie.sideLabels = True  # Put labels to the side
-    pie.simpleLabels = False  # Use more control over labels
+        if i < len(pie.slices):
+            pie.slices[i].fillColor = colorful_palette[i % len(colorful_palette)]
     
     # Add the pie to the drawing
     drawing.add(pie)
