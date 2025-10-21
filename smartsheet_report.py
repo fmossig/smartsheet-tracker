@@ -1493,24 +1493,17 @@ def add_user_details_section(story, metrics):
             story.append(Paragraph("No detailed product data available for this user.", normal_style))
             story.append(Spacer(1, 5*mm))
         
-        # Add user's special activities section
-        story.append(Paragraph("Special Activities", subheading_style))
-        
-        # Get user's special activities
+        # Get user's special activities (without the section header)
         category_hours, total_hours = get_user_special_activities(user)
-        
+
         if total_hours > 0:
-            story.append(Paragraph(
-                f"Special activities in the last 30 days. Total hours: {total_hours:.1f}",
-                normal_style
-            ))
-            
-            # Create and add pie chart for this user's activities
+            # Create and add pie chart for this user's activities - with smaller size
             pie_chart = create_activities_pie_chart(category_hours, total_hours, width=350, height=250)
             story.append(pie_chart)
         else:
+            # Only show a small note if no activities
             story.append(Paragraph(
-                f"No special activities recorded in the last 30 days.",
+                f"No special activities recorded.",
                 normal_style
             ))
 
