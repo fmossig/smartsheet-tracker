@@ -178,11 +178,14 @@ def collect_metrics(changes):
         metrics["groups"] = {"NA": 5, "NF": 3, "NH": 2, "NP": 1, "NT": 4, "NV": 2, "NM": 3}
         metrics["phases"] = {"1": 3, "2": 4, "3": 2, "4": 1, "5": 3}
         
-        # Sample user data for each group
-        sample_users = ["DM", "EK", "HI", "SM", "JHU", "LK"]
+        # Sample user data for each group - MODIFIED: Use actual user initials with counts
+        sample_users = {"DM": 8, "EK": 7, "HI": 6, "SM": 5, "JHU": 9, "LK": 4}
+        metrics["users"] = sample_users  # Add sample users to metrics
+        
+        # Create random distribution of users across phases
         for group in metrics["groups"]:
             for phase in metrics["phases"]:
-                for user in sample_users:
+                for user, count in sample_users.items():
                     # Create random distribution of users across phases
                     if (ord(group[-1]) + ord(phase) + ord(user[-1])) % 3 == 0:
                         metrics["group_phase_user"][group][phase][user] = (ord(group[-1]) + ord(phase) + ord(user[-1])) % 5 + 1
