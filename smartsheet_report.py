@@ -1498,7 +1498,7 @@ def add_user_details_section(story, metrics):
 
         if total_hours > 0:
             # Create and add pie chart for this user's activities - with smaller size
-            pie_chart = create_activities_pie_chart(category_hours, total_hours, width=350, height=250)
+            pie_chart = create_activities_pie_chart(category_hours, total_hours, width=400, height=250)
             story.append(pie_chart)
         else:
             # Only show a small note if no activities
