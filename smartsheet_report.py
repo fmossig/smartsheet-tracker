@@ -890,35 +890,50 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=200
     return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
     
 def create_horizontal_legend(color_name_pairs, width=500, height=30):
-    """Create a horizontal legend with the given color-name pairs with increased spacing."""
+    """Create a horizontal legend with the given color-name pairs with adjusted spacing."""
     drawing = Drawing(width, height)
     
-    # Calculate spacing
-    item_width = min(120, width / len(color_name_pairs) if color_name_pairs else 120)
+    # Calculate spacing based on number of items to ensure they all fit on one row
+    num_items = len(color_name_pairs)
+    if num_items <= 0:
+        return drawing
+    
+    # Calculate spacing to fit all items in one row
+    # Subtract some padding from the width to ensure it doesn't go off-edge
+    usable_width = width - 20  # Padding on both sides
+    item_width = usable_width / num_items
+    
+    # Adjust font size based on number of items to ensure readability
+    font_size = 10 if num_items <= 6 else (8 if num_items <= 8 else 6)
+    
+    # Use smaller color boxes if many items
+    box_size = 8 if num_items <= 8 else 6
     
     for i, (color, name) in enumerate(color_name_pairs):
+        # Calculate x position for this item
+        x_pos = 10 + (i * item_width)
+        
         # Draw color box (square)
         drawing.add(Rect(
-            i * item_width + 5,
-            height/2 - 5,
-            10,
-            10,
+            x_pos,
+            height/2 - box_size/2,
+            box_size,
+            box_size,
             fillColor=color,
             strokeColor=colors.black,
             strokeWidth=0.5
         ))
         
-        # Draw name with increased spacing from the color square
+        # Draw name with compact spacing
         drawing.add(String(
-            i * item_width + 25,  # Increased from +15 to +25 for more space
+            x_pos + box_size + 2,  # Reduced space after color box
             height/2,
             name,
             fontName='Helvetica', 
-            fontSize=10
+            fontSize=font_size
         ))
     
     return drawing
-
 def query_smartsheet_data(group=None):
     """Query raw Smartsheet data to get activity metrics, optionally filtered by group."""
     client = smartsheet.Smartsheet(token)
@@ -1430,15 +1445,10 @@ def create_monthly_report(year, month, force=False):
             )
             story.append(chart)
             
-            # Add horizontal legend below
-            if legend_data:
-                # Split legend into chunks of 5 if there are many users
-                chunk_size = 5
-                legend_chunks = [legend_data[i:i+chunk_size] for i in range(0, len(legend_data), chunk_size)]
-                
-                for chunk in legend_chunks:
-                    legend = create_horizontal_legend(chunk, width=400)
-                    story.append(legend)
+        # Add horizontal legend below - ALL USERS IN ONE ROW
+        if legend_data:
+            legend = create_horizontal_legend(legend_data, width=400)
+            story.append(legend)
                 
             # Add the gauge charts for this group - side by side
             story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
