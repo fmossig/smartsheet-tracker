@@ -986,7 +986,7 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=200
     # Return the chart and legend data
     return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
     
-def create_horizontal_legend(color_name_pairs, width=500, height=30):
+def create_horizontal_legend(color_name_pairs, width=400, height=30):
     """Create a horizontal legend with the given color-name pairs with adjusted spacing."""
     drawing = Drawing(width, height)
     
