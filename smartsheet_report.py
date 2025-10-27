@@ -428,7 +428,7 @@ def create_activities_pie_chart(category_hours, total_hours, width=500, height=4
     # Add title
     drawing.add(String(width/2, height-20, 
                       f"Summe Stunden Sonderaktivitäten letzte 30T",
-                      fontName='ZapfDingbats', fontSize=14, textAnchor='middle'))
+                      fontName='Helvetica-Oblique', fontSize=14, textAnchor='middle'))
     
     # Create the pie chart
     pie = Pie()
