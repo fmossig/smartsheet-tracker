@@ -20,6 +20,7 @@ from reportlab.graphics.widgets.markers import makeMarker
 from reportlab.graphics.shapes import Line, Rect
 from reportlab.graphics.shapes import Path, Circle
 from reportlab.graphics.shapes import Wedge
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 # Set up logging
 logging.basicConfig(
@@ -986,52 +987,97 @@ def make_group_detail_chart(group, phase_user_data, title, width=500, height=200
     # Return the chart and legend data
     return drawing, [(user_colors.get(user, colors.steelblue), user) for user in all_users]
     
-def create_horizontal_legend(color_name_pairs, width=400, height=30):
-    """Create a horizontal legend with the given color-name pairs with adjusted spacing."""
+def create_horizontal_legend(color_name_pairs, width=500, height=24, min_font=6, max_font=10):
+    """
+    Draw a single-line horizontal legend that adapts spacing:
+      - width: total drawing width (use A4[0] - 50*mm to use full printable width)
+      - height: drawing height
+      - min_font/max_font: font size clamp
+    The function will reduce font size to fit all items on one row and truncate labels if needed.
+    """
     drawing = Drawing(width, height)
-    
-    # Calculate spacing based on number of items to ensure they all fit on one row
     num_items = len(color_name_pairs)
-    if num_items <= 0:
+    if num_items == 0:
         return drawing
-    
-    # Calculate spacing to fit all items in one row
-    # Subtract some padding from the width to ensure it doesn't go off-edge
-    usable_width = width - 20  # Padding on both sides
-    item_width = usable_width / num_items
-    
-    # Adjust font size based on number of items to ensure readability
-    font_size = 10 if num_items <= 6 else (8 if num_items <= 8 else 6)
-    
-    # Use smaller color boxes if many items
-    box_size = 8 if num_items <= 8 else 6
-    
-    for i, (color, name) in enumerate(color_name_pairs):
-        # Calculate x position for this item
-        x_pos = 10 + (i * item_width)
-        
-        # Draw color box (square)
-        drawing.add(Rect(
-            x_pos,
-            height/2 - box_size/2,
-            box_size,
-            box_size,
-            fillColor=color,
-            strokeColor=colors.black,
-            strokeWidth=0.5
-        ))
-        
-        # Draw name with compact spacing
-        drawing.add(String(
-            x_pos + box_size + 2,  # Reduced space after color box
-            height/2,
-            name,
-            fontName='Helvetica', 
-            fontSize=font_size
-        ))
-    
-    return drawing
 
+    # Padding around edges and between items
+    left_pad = 6
+    right_pad = 6
+    box_label_gap = 4   # gap between color box and label
+    item_gap = 10       # minimal gap between items
+
+    usable_width = width - left_pad - right_pad
+    # start with a reasonable font size depending on item count
+    font_size = max(min(max_font, int( max_font - (num_items - 6) * 1 )), min_font)
+
+    # box size scales with font size
+    box_size = max(6, int(font_size * 0.9))
+
+    # compute label widths and adjust font size down until everything fits
+    def total_needed_width(fs):
+        bs = max(6, int(fs * 0.9))
+        total = 0
+        for _, name in color_name_pairs:
+            lbl_w = stringWidth(name, 'Helvetica', fs)
+            total += bs + box_label_gap + lbl_w + item_gap
+        return total
+
+    # reduce font size until it fits or reach min_font
+    while font_size > min_font and total_needed_width(font_size) > usable_width:
+        font_size -= 1
+
+    # Recalculate box_size after final font_size is determined
+    box_size = max(6, int(font_size * 0.9))
+
+    # If at min_font and still doesn't fit, truncate labels
+    truncated_names = []
+    if total_needed_width(font_size) > usable_width:
+        # compute average available width per item for label
+        avg_space_per_item = (usable_width - num_items * (box_size + box_label_gap + item_gap)) / num_items
+        avg_space_per_item = max(10, avg_space_per_item)  # at least 10pt
+        for _, name in color_name_pairs:
+            # measure full name; if larger than avg_space_per_item, truncate
+            w = stringWidth(name, 'Helvetica', font_size)
+            if w <= avg_space_per_item:
+                truncated_names.append(name)
+            else:
+                # truncation loop, add '…' and reduce characters until fits
+                truncated = name
+                while truncated and stringWidth(truncated + '…', 'Helvetica', font_size) > avg_space_per_item:
+                    truncated = truncated[:-1]
+                truncated_names.append(truncated + '…' if truncated else '…')
+    else:
+        truncated_names = [n for _, n in color_name_pairs]
+
+    # Now render items evenly from left_pad
+    # Calculate vertical center for both boxes and text
+    center_y = height / 2
+    
+    x = left_pad
+
+    for i, (color, name) in enumerate(color_name_pairs):
+        lbl = truncated_names[i]
+
+        # Draw color box - centered vertically
+        box_y = center_y - box_size / 2
+        drawing.add(Rect(x, box_y, box_size, box_size,
+                         fillColor=color, strokeColor=colors.black, strokeWidth=0.5))
+        x += box_size + box_label_gap
+
+        # Draw label - centered vertically to align with box center
+        # String baseline needs to be adjusted so text center aligns with box center
+        text_y = center_y - font_size * 0.35  # Adjust baseline for visual centering
+        drawing.add(String(x, text_y, lbl,
+                           fontName='Helvetica', fontSize=font_size, fillColor=colors.black))
+        lbl_w = stringWidth(lbl, 'Helvetica', font_size)
+        x += lbl_w + item_gap
+
+        # if we run out of space break (safety)
+        if x > width - right_pad:
+            break
+
+    return drawing
+    
 def collect_user_group_data(metrics, target_user):
     """Collect data about a user's activity across different product groups."""
     user_data = defaultdict(lambda: defaultdict(int))
