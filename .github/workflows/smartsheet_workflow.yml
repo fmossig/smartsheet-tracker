@@ -61,21 +61,24 @@ jobs:
           fi
 
       - name: Run track
-        if: github.event.inputs.action == 'track' || steps.determine-task.outputs.task == 'track'
+        # CORRECTED: Check event type first
+        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'track') || (github.event_name == 'schedule' && steps.determine-task.outputs.task == 'track')
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_tracker.py
 
       - name: Run weekly report
-        if: github.event.inputs.action == 'weekly-report' || steps.determine-task.outputs.task == 'weekly-report'
+        # CORRECTED: Check event type first
+        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'weekly-report') || (github.event_name == 'schedule' && steps.determine-task.outputs.task == 'weekly-report')
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_report.py --weekly --previous --force
 
       - name: Run monthly report
-        if: github.event.inputs.action == 'monthly-report' || steps.determine-task.outputs.task == 'monthly-report'
+        # CORRECTED: Check event type first
+        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'monthly-report') || (github.event_name == 'schedule' && steps.determine-task.outputs.task == 'monthly-report')
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
@@ -120,5 +123,7 @@ jobs:
           git config user.email 'actions@github.com'
           mkdir -p reports/weekly reports/monthly
           git add tracking_data/ reports/
-          git commit -m "${{ github.event.inputs.action || steps.determine-task.outputs.task || 'track' }} $(date +'%Y-%m-%d')" || echo "No changes to commit"
+          # Use a generic commit message for scheduled runs
+          COMMIT_MSG="${{ github.event.inputs.action || steps.determine-task.outputs.task || 'Scheduled update' }} $(date +'%Y-%m-%d')"
+          git commit -m "$COMMIT_MSG" || echo "No changes to commit"
           git push
