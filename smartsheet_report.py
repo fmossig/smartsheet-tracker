@@ -226,6 +226,12 @@ def get_column_map(sheet_id):
     try:
         client = smartsheet.Smartsheet(token)
         sheet = client.Sheets.get_sheet(sheet_id, include=['columns'])
+        
+        # --- NEW: Log the discovered column titles for debugging ---
+        discovered_columns = [col.title for col in sheet.columns]
+        logger.info(f"Discovered columns in sheet {sheet_id}: {discovered_columns}")
+        # --- END NEW ---
+        
         column_map = {col.title: col.id for col in sheet.columns}
         logger.info(f"Successfully created column map for sheet ID {sheet_id}.")
         return column_map
