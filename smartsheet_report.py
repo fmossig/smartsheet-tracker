@@ -239,100 +239,82 @@ def get_column_map(sheet_id):
         logger.error(f"Failed to create column map for sheet ID {sheet_id}: {e}", exc_info=True)
         return None
 
-def get_special_activities(days=30):
-    """
-    Fetch and analyze special activities from the dedicated Smartsheet.
-    
-    Args:
-        days: Number of days to look back (default 30)
-    
-    Returns:
-        Tuple of (sorted_category_hours, total_hours) containing activity data
-    """
-    client = smartsheet.Smartsheet(token)
-    
-    try:
-        # Get the special activities sheet
-        sheet_id = SHEET_IDS.get("SPECIAL")
-        sheet = client.Sheets.get_sheet(sheet_id)
-        logger.info(f"Retrieved special activities sheet with {len(sheet.rows)} rows")
-        
-        # Current date for calculating the date range
-        current_date = datetime.now().date()
-        cutoff_date = current_date - timedelta(days=days)
-        
-        # Map column titles to IDs
-        col_map = {col.title: col.id for col in sheet.columns}
-        
-        # Check if required columns exist
-        required_columns = ["Mitarbeiter", "Datum", "Kategorie", "Arbeitszeit in Std"]
-        missing_columns = [col for col in required_columns if col not in col_map]
-        if missing_columns:
-            logger.warning(f"Missing columns in special activities sheet: {missing_columns}")
-            return generate_sample_special_activities()
-        
-        # Extract data from rows
-        activities = []
-        
-        for row in sheet.rows:
-            activity = {}
-            
-            # Extract cell values
-            for cell in row.cells:
-                for col_name, col_id in col_map.items():
-                    if cell.column_id == col_id and cell.value is not None:
-                        activity[col_name] = cell.value
-            
-            # Skip rows without category or hours
-            if not activity.get("Kategorie") or not activity.get("Arbeitszeit in Std"):
-                continue
-                
-            # Parse date
-            if "Datum" in activity:
-                try:
-                    activity_date = parse_date(activity["Datum"])
-                    if activity_date and activity_date >= cutoff_date:
-                        # Convert hours from string to float (handling comma as decimal separator)
-                        if "Arbeitszeit in Std" in activity:
-                            hours_str = str(activity["Arbeitszeit in Std"]).replace(',', '.')
-                            try:
-                                activity["Hours"] = float(hours_str)
-                            except ValueError:
-                                activity["Hours"] = 0
-                        else:
-                            activity["Hours"] = 0
-                            
-                        activities.append(activity)
-                except Exception as e:
-                    logger.debug(f"Error parsing date in special activities: {e}")
-        
-        # Group by category and sum hours
-        category_hours = defaultdict(float)
-        for activity in activities:
-            category = activity.get("Kategorie", "Unknown")
-            hours = activity.get("Hours", 0)
-            category_hours[category] += hours
-        
-        # Sort by hours descending
-        sorted_categories = sorted(category_hours.items(), key=lambda x: x[1], reverse=True)
-        
-        # Calculate total hours
-        total_hours = sum(category_hours.values())
-        
-        logger.info(f"Processed {len(activities)} special activities in the last {days} days")
-        logger.info(f"Found {len(category_hours)} categories with {total_hours:.1f} total hours")
-        
-        # If no activities found, return sample data
-        if not sorted_categories:
-            logger.info("No special activities found, using sample data")
-            return generate_sample_special_activities()
-            
-        return sorted_categories, total_hours
-        
-    except Exception as e:
-        logger.error(f"Error fetching special activities: {e}", exc_info=True)
-        return generate_sample_special_activities()
+def get_special_activities(start_date, end_date):
+    """Fetches and processes special activities from the designated sheet."""
+    if not SPECIAL_ACTIVITIES_SHEET_ID:
+        logger.warning("SPECIAL_ACTIVITIES_SHEET_ID not set. Skipping.")
+        return {}, 0, 0
 
+    try:
+        client = smartsheet.Smartsheet(token)
+        sheet = client.Sheets.get_sheet(SPECIAL_ACTIVITIES_SHEET_ID)
+
+        # --- NEW: Validate the response from the API ---
+        if isinstance(sheet, smartsheet.models.Error):
+            logger.error(f"Error fetching special activities sheet: {sheet.message}")
+            # Return empty values to prevent crashing the report
+            return {}, 0, 0
+        # --- END NEW ---
+
+        logger.info(f"Retrieved special activities sheet with {len(sheet.rows)} rows")
+
+        # Get column IDs
+        col_map = {col.title: col.id for col in sheet.columns}
+        user_col_id = col_map.get("Wer")
+        date_col_id = col_map.get("Datum")
+        category_col_id = col_map.get("Kategorie")
+        duration_col_id = col_map.get("Zeitaufwand (Stunden)")
+
+        if not all([user_col_id, date_col_id, category_col_id, duration_col_id]):
+            logger.error("One or more required columns (Wer, Datum, Kategorie, Zeitaufwand) not found in special activities sheet.")
+            return {}, 0, 0
+
+        user_activity = {}
+        total_activities = 0
+        total_hours = 0
+
+        for row in sheet.rows:
+            date_cell = row.get_column(date_col_id)
+            if date_cell and date_cell.value:
+                try:
+                    activity_date = datetime.strptime(date_cell.value, '%Y-%m-%d').date()
+                    if start_date <= activity_date <= end_date:
+                        user_cell = row.get_column(user_col_id)
+                        category_cell = row.get_column(category_col_id)
+                        duration_cell = row.get_column(duration_col_id)
+
+                        user = user_cell.value if user_cell else "Unassigned"
+                        category = category_cell.value if category_cell else "Uncategorized"
+                        
+                        duration = 0
+                        if duration_cell and duration_cell.value:
+                            try:
+                                # Handle both comma and dot as decimal separators
+                                duration_str = str(duration_cell.value).replace(',', '.')
+                                duration = float(duration_str)
+                            except (ValueError, TypeError):
+                                duration = 0 # Ignore invalid duration values
+
+                        if user not in user_activity:
+                            user_activity[user] = {"count": 0, "hours": 0, "categories": {}}
+                        
+                        user_activity[user]["count"] += 1
+                        user_activity[user]["hours"] += duration
+                        user_activity[user]["categories"][category] = user_activity[user]["categories"].get(category, 0) + duration
+
+                        total_activities += 1
+                        total_hours += duration
+
+                except (ValueError, TypeError):
+                    continue # Skip rows with invalid date format
+
+        logger.info(f"Processed {total_activities} special activities in the date range")
+        logger.info(f"Found {len(user_activity)} categories with {total_hours:.1f} total hours")
+        return user_activity, total_activities, total_hours
+
+    except Exception as e:
+        logger.error(f"Failed to get special activities: {e}", exc_info=True)
+        return {}, 0, 0
 def get_user_special_activities(user_name, days=30):
     """
     Fetch special activities for a specific user.
@@ -581,118 +563,69 @@ def create_special_activities_breakdown(category_hours, total_hours):
     
     return table
 
-def get_marketplace_activity(group):
-    """
-    For a specific group, calculate average days since last activity for each marketplace/country.
-    Returns two lists: most active and most inactive marketplaces.
-    """
-    client = smartsheet.Smartsheet(token)
-    
+def get_marketplace_activity(group_name, sheet_id, start_date, end_date):
+    """Analyzes a sheet to get activity metrics per marketplace."""
     try:
-        # Get sheet by group ID
-        sheet_id = SHEET_IDS.get(group)
-        if not sheet_id:
-            logger.warning(f"Sheet ID not found for group {group}")
-            return [], []
-            
+        logger.info(f"Processing sheet {group_name} for activity metrics")
+        client = smartsheet.Smartsheet(token)
         sheet = client.Sheets.get_sheet(sheet_id)
-        
-        # Find the marketplace column (now specifically "Amazon") and date columns
-        marketplace_col_id = None
-        date_cols = {}
-        
-        # Log all available column titles for debugging
+
+        # --- NEW: Validate the response from the API ---
+        if isinstance(sheet, smartsheet.models.Error):
+            logger.error(f"Error processing sheet {group_name} for metrics: {sheet.message}")
+            # Return empty dict to prevent crashing the report
+            return {}
+        # --- END NEW ---
+
         column_titles = [col.title for col in sheet.columns]
-        logger.info(f"Available columns in sheet {group}: {column_titles}")
+        logger.info(f"Available columns in sheet {group_name}: {column_titles}")
+
+        # Find the marketplace column
+        marketplace_col_name = "Amazon"
+        if marketplace_col_name not in column_titles:
+            logger.warning(f"Marketplace column '{marketplace_col_name}' not found in sheet {group_name}. Skipping.")
+            return {}
         
-        # Look specifically for the "Amazon" column
-        for col in sheet.columns:
-            if col.title == "Amazon":  # Look for exact match with "Amazon"
-                marketplace_col_id = col.id
-                logger.info(f"Found marketplace column: {col.title}")
-                break
-                
-        # Search for date columns
-        for col in sheet.columns:
-            if col.title in ["Kontrolle", "BE am", "K am", "C am", "Reopen C2 am"] or "am" in col.title or "date" in col.title.lower():
-                date_cols[col.title] = col.id
-                
-        if not marketplace_col_id:
-            logger.warning(f"Marketplace column 'Amazon' not found for group {group}")
-            # Generate sample data since no marketplace column was found
-            return generate_sample_marketplace_data()
-            
-        if not date_cols:
-            logger.warning(f"No date columns found for group {group}")
-            return generate_sample_marketplace_data()
-            
-        logger.info(f"Found {len(date_cols)} date columns for group {group}")
-        
-        # Current date for calculating days since
-        current_date = datetime.now().date()
-        
-        # Dictionary to collect marketplace activity data
-        marketplace_data = defaultdict(list)
-        
-        # Process each row
-        row_count = 0
+        logger.info(f"Found marketplace column: {marketplace_col_name}")
+        marketplace_col_id = [col.id for col in sheet.columns if col.title == marketplace_col_name][0]
+
+        # Find all date columns
+        date_col_ids = {
+            col.id: col.title for col in sheet.columns if any(
+                keyword in col.title for keyword in ["BE am", "K am", "C am", "Reopen C2 am", "Check Reopen C"]
+            )
+        }
+        logger.info(f"Found {len(date_col_ids)} date columns for group {group_name}")
+
+        activity = {}
         valid_rows = 0
-        
         for row in sheet.rows:
-            row_count += 1
-            marketplace = None
-            most_recent_date = None
-            
-            # Get the marketplace value
+            row_has_date = False
             for cell in row.cells:
-                if cell.column_id == marketplace_col_id and cell.value:
-                    marketplace = str(cell.value).strip()
-                    break
+                if cell.column_id in date_col_ids and cell.value:
+                    try:
+                        # Smartsheet dates are in 'YYYY-MM-DD' format
+                        activity_date = datetime.strptime(cell.value, '%Y-%m-%d').date()
+                        if start_date <= activity_date <= end_date:
+                            row_has_date = True
+                            break # Found a valid date, no need to check other cells
+                    except (ValueError, TypeError):
+                        continue # Ignore cells with invalid date formats
             
-            if not marketplace:
-                continue
-                
-            # Find the most recent date across all date columns
-            for col_name, col_id in date_cols.items():
-                for cell in row.cells:
-                    if cell.column_id == col_id and cell.value:
-                        try:
-                            date_val = parse_date(cell.value)
-                            if date_val and (most_recent_date is None or date_val > most_recent_date):
-                                most_recent_date = date_val
-                        except Exception as e:
-                            logger.debug(f"Error parsing date: {e}")
-            
-            # Calculate days since last activity
-            if most_recent_date:
-                days_since = (current_date - most_recent_date).days
-                marketplace_data[marketplace].append(days_since)
+            if row_has_date:
                 valid_rows += 1
+                marketplace_cell = row.get_column(marketplace_col_id)
+                if marketplace_cell and marketplace_cell.value:
+                    marketplace = marketplace_cell.value.strip().upper()
+                    activity[marketplace] = activity.get(marketplace, 0) + 1
         
-        logger.info(f"Processed {row_count} rows in group {group}, found {valid_rows} valid rows with dates")
-        logger.info(f"Found {len(marketplace_data)} unique marketplaces")
-        
-        # Calculate average days for each marketplace
-        marketplace_averages = []
-        for marketplace, days_list in marketplace_data.items():
-            if days_list:  # Make sure we have data
-                avg_days = sum(days_list) / len(days_list)
-                marketplace_averages.append((marketplace, avg_days, len(days_list)))
-        
-        # Sort by average days (ascending for most active, descending for most inactive)
-        most_active = sorted(marketplace_averages, key=lambda x: x[1])[:5]  # Lowest average days
-        most_inactive = sorted(marketplace_averages, key=lambda x: x[1], reverse=True)[:5]  # Highest average days
-        
-        # If we don't have enough data, generate sample data
-        if len(most_active) < 2 or len(most_inactive) < 2:
-            logger.info(f"Not enough marketplace data found for group {group}, using sample data")
-            return generate_sample_marketplace_data()
-            
-        return most_active, most_inactive
-        
+        logger.info(f"Processed {len(sheet.rows)} rows in group {group_name}, found {valid_rows} valid rows with dates")
+        logger.info(f"Found {len(activity)} unique marketplaces")
+        return activity
+
     except Exception as e:
-        logger.error(f"Error getting marketplace activity for group {group}: {e}", exc_info=True)
-        return generate_sample_marketplace_data()
+        logger.error(f"Error getting marketplace activity for group {group_name}: {e}", exc_info=True)
+        return {}
 
 def generate_sample_marketplace_data():
     """Generate sample marketplace activity data."""
