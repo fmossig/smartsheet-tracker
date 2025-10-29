@@ -1577,8 +1577,8 @@ def upload_pdf_to_smartsheet(file_path):
         client = smartsheet.Smartsheet(token)
         logger.info(f"Uploading {os.path.basename(file_path)} to Smartsheet...")
         
-        # Attach file to the specified row
-        client.Sheets.attach_file_to_row(
+        # CORRECTED: The method is named 'attach_file', not 'attach_file_to_row'
+        client.Sheets.attach_file(
             REPORT_UPLOAD_SHEET_ID,
             REPORT_UPLOAD_ROW_ID,
             (os.path.basename(file_path), open(file_path, 'rb'), 'application/pdf')
