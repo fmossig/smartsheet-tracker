@@ -1577,11 +1577,12 @@ def add_user_details_section(story, metrics):
                 normal_style
             ))
 
-def upload_pdf_to_smartsheet(file_path):
+# This is the corrected function definition.
+def upload_pdf_to_smartsheet(file_path, row_id):
     """Uploads a given PDF file to a specific Smartsheet row."""
     
     # Check if the upload feature is configured
-    if not REPORT_METADATA_SHEET_ID or not row_id: # Check for the passed row_id
+    if not REPORT_METADATA_SHEET_ID or not row_id:
         logger.warning("Smartsheet upload not configured. Skipping PDF upload.")
         return
 
@@ -1591,18 +1592,16 @@ def upload_pdf_to_smartsheet(file_path):
 
     try:
         client = smartsheet.Smartsheet(token)
-        logger.info(f"Uploading {os.path.basename(file_path)} to Smartsheet...")
+        logger.info(f"Uploading {os.path.basename(file_path)} to row {row_id}...")
         
-        # --- THE FINAL, CORRECT IMPLEMENTATION ---
         # Use the passed row_id
         client.Attachments.attach_file_to_row(
             REPORT_METADATA_SHEET_ID,
             row_id,
             (os.path.basename(file_path), open(file_path, 'rb'), 'application/pdf')
         )
-        # --- END CORRECTION ---
         
-        logger.info("Successfully uploaded PDF to Smartsheet.")
+        logger.info(f"Successfully uploaded PDF to row {row_id}.")
         
     except Exception as e:
         logger.error(f"Failed to upload PDF to Smartsheet: {e}", exc_info=True)
