@@ -100,6 +100,14 @@ DATA_DIR = "tracking_data"
 REPORTS_DIR = "reports"
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
+# --- NEW: Constants for PDF Upload ---
+# TODO: Fill these with your actual Smartsheet IDs
+# The ID of the sheet where you want to upload the reports
+REPORT_UPLOAD_SHEET_ID = 7888169555939204  # e.g., 8391667138243332
+# The ID of the specific row where the PDF will be attached
+REPORT_UPLOAD_ROW_ID = 78603245653892    # e.g., 5334468835970948
+# --- END NEW ---
+
 # File paths
 CHANGES_FILE = os.path.join(DATA_DIR, "change_history.csv")
 
@@ -1553,6 +1561,33 @@ def add_user_details_section(story, metrics):
                 normal_style
             ))
 
+def upload_pdf_to_smartsheet(file_path):
+    """Uploads a given PDF file to a specific Smartsheet row."""
+    
+    # Check if the upload feature is configured
+    if not REPORT_UPLOAD_SHEET_ID or not REPORT_UPLOAD_ROW_ID:
+        logger.warning("Smartsheet upload not configured. Skipping PDF upload.")
+        return
+
+    if not os.path.exists(file_path):
+        logger.error(f"Cannot upload file: {file_path} does not exist.")
+        return
+
+    try:
+        client = smartsheet.Smartsheet(token)
+        logger.info(f"Uploading {os.path.basename(file_path)} to Smartsheet...")
+        
+        # Attach file to the specified row
+        client.Sheets.attach_file_to_row(
+            REPORT_UPLOAD_SHEET_ID,
+            REPORT_UPLOAD_ROW_ID,
+            (os.path.basename(file_path), open(file_path, 'rb'), 'application/pdf')
+        )
+        
+        logger.info("Successfully uploaded PDF to Smartsheet.")
+        
+    except Exception as e:
+        logger.error(f"Failed to upload PDF to Smartsheet: {e}", exc_info=True)
 
 def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
@@ -1767,6 +1802,11 @@ def create_weekly_report(start_date, end_date, force=False):
     # Build the PDF
     doc.build(story)
     logger.info(f"Weekly report created: {filename}")
+    
+    # --- NEW: Upload the generated PDF ---
+    upload_pdf_to_smartsheet(filename)
+    # --- END NEW ---
+    
     # Log the absolute path for debugging
     logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
@@ -1986,6 +2026,11 @@ def create_monthly_report(year, month, force=False):
     # Build the PDF
     doc.build(story)
     logger.info(f"Monthly report created: {filename}")
+    
+    # --- NEW: Upload the generated PDF ---
+    upload_pdf_to_smartsheet(filename)
+    # --- END NEW ---
+    
     # Log the absolute path for debugging
     logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
