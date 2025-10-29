@@ -564,68 +564,88 @@ def create_special_activities_breakdown(category_hours, total_hours):
     return table
 
 def get_marketplace_activity(group_name, sheet_id, start_date, end_date):
-    """Analyzes a sheet to get activity metrics per marketplace."""
+    """
+    Analyzes a sheet to get activity metrics per marketplace, and determines
+    most and least active marketplaces based on the last activity date.
+    """
     try:
-        logger.info(f"Processing sheet {group_name} for activity metrics")
+        logger.info(f"Processing sheet {group_name} for marketplace activity")
         client = smartsheet.Smartsheet(token)
         sheet = client.Sheets.get_sheet(sheet_id)
 
-        # --- NEW: Validate the response from the API ---
         if isinstance(sheet, smartsheet.models.Error):
-            logger.error(f"Error processing sheet {group_name} for metrics: {sheet.message}")
-            # Return empty dict to prevent crashing the report
-            return {}
-        # --- END NEW ---
+            logger.error(f"Error processing sheet {group_name} for marketplace activity: {sheet.message}")
+            return [], []
 
-        column_titles = [col.title for col in sheet.columns]
-        logger.info(f"Available columns in sheet {group_name}: {column_titles}")
-
-        # Find the marketplace column
-        marketplace_col_name = "Amazon"
-        if marketplace_col_name not in column_titles:
-            logger.warning(f"Marketplace column '{marketplace_col_name}' not found in sheet {group_name}. Skipping.")
-            return {}
+        col_map = {col.title: col.id for col in sheet.columns}
         
-        logger.info(f"Found marketplace column: {marketplace_col_name}")
-        marketplace_col_id = [col.id for col in sheet.columns if col.title == marketplace_col_name][0]
+        # Check for required columns
+        marketplace_col_id = col_map.get("Amazon")
+        date_cols = {title: col_id for title, col_id in col_map.items() if " am" in title or "Kontrolle" in title}
 
-        # Find all date columns
-        date_col_ids = {
-            col.id: col.title for col in sheet.columns if any(
-                keyword in col.title for keyword in ["BE am", "K am", "C am", "Reopen C2 am", "Check Reopen C"]
-            )
-        }
-        logger.info(f"Found {len(date_col_ids)} date columns for group {group_name}")
+        if not marketplace_col_id or not date_cols:
+            logger.warning(f"Missing required columns in sheet {group_name}. Skipping marketplace analysis.")
+            return [], []
 
-        activity = {}
-        valid_rows = 0
+        # This dictionary will store the last activity date for each product (row)
+        product_last_activity = {}
+
         for row in sheet.rows:
-            row_has_date = False
+            last_date = None
             for cell in row.cells:
-                if cell.column_id in date_col_ids and cell.value:
+                if cell.column_id in date_cols.values():
                     try:
-                        # Smartsheet dates are in 'YYYY-MM-DD' format
-                        activity_date = datetime.strptime(cell.value, '%Y-%m-%d').date()
-                        if start_date <= activity_date <= end_date:
-                            row_has_date = True
-                            break # Found a valid date, no need to check other cells
+                        cell_date = parse_date(cell.value)
+                        if cell_date and (last_date is None or cell_date > last_date):
+                            last_date = cell_date
                     except (ValueError, TypeError):
-                        continue # Ignore cells with invalid date formats
+                        continue
             
-            if row_has_date:
-                valid_rows += 1
+            if last_date:
+                product_last_activity[row.id] = last_date
+
+        # This dictionary will store activity counts per marketplace
+        marketplace_counts = defaultdict(int)
+        # This dictionary will store the days since last activity for each marketplace
+        marketplace_days_since_activity = defaultdict(list)
+        
+        today = datetime.now().date()
+
+        for row in sheet.rows:
+            if row.id in product_last_activity:
                 marketplace_cell = row.get_column(marketplace_col_id)
                 if marketplace_cell and marketplace_cell.value:
-                    marketplace = marketplace_cell.value.strip().upper()
-                    activity[marketplace] = activity.get(marketplace, 0) + 1
+                    marketplace_code = marketplace_cell.value.strip().upper()
+                    marketplace_counts[marketplace_code] += 1
+                    
+                    days_diff = (today - product_last_activity[row.id]).days
+                    marketplace_days_since_activity[marketplace_code].append(days_diff)
+
+        # Calculate average days since last activity
+        avg_days = {}
+        for mp, days_list in marketplace_days_since_activity.items():
+            avg_days[mp] = sum(days_list) / len(days_list) if days_list else 0
+
+        # Combine the data
+        combined_data = []
+        for mp, count in marketplace_counts.items():
+            # Here, we use the raw 'mp' code directly
+            combined_data.append((mp, avg_days.get(mp, 0), count))
+
+        # Sort to find most and least active
+        # Most active: lower average days since activity
+        most_active = sorted(combined_data, key=lambda x: x[1])[:5]
+        # Most inactive: higher average days since activity
+        most_inactive = sorted(combined_data, key=lambda x: x[1], reverse=True)[:5]
         
-        logger.info(f"Processed {len(sheet.rows)} rows in group {group_name}, found {valid_rows} valid rows with dates")
-        logger.info(f"Found {len(activity)} unique marketplaces")
-        return activity
+        logger.info(f"Found {len(most_active)} most active and {len(most_inactive)} most inactive marketplaces for {group_name}")
+        
+        return most_active, most_inactive
 
     except Exception as e:
         logger.error(f"Error getting marketplace activity for group {group_name}: {e}", exc_info=True)
-        return {}
+        return [], []
+
 
 def generate_sample_marketplace_data():
     """Generate sample marketplace activity data."""
@@ -1768,7 +1788,7 @@ def create_weekly_report(start_date, end_date, force=False):
                 story.append(Paragraph("Marketplace Activity", subheading_style))
                 
                 # Get marketplace activity data
-                most_active, most_inactive = get_marketplace_activity(group)
+                most_active, most_inactive = get_marketplace_activity(group, SHEET_IDS[group], start_date, end_date)
                 
                 # Create tables for most active and inactive marketplaces - SIDE BY SIDE
                 active_table = create_activity_table(most_active, "Most Active")
@@ -2008,7 +2028,7 @@ def create_monthly_report(year, month, force=False):
                 story.append(Paragraph("Marketplace Activity", subheading_style))
                 
                 # Get marketplace activity data
-                most_active, most_inactive = get_marketplace_activity(group)
+                most_active, most_inactive = get_marketplace_activity(group, SHEET_IDS[group], start_date, end_date)
                 
                 # Create tables for most active and inactive marketplaces - SIDE BY SIDE
                 active_table = create_activity_table(most_active, "Most Active")
