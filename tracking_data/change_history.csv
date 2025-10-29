@@ -2413,20 +2413,6 @@ Timestamp,Group,RowID,Phase,DateField,Date,User,Marketplace
 2025-10-15 00:00:00,NA,1,1,Kontrolle,2025-10-14,SM,com
 2025-10-15 00:00:00,NA,1,1,Kontrolle,2025-10-16,HI,es
 2025-10-15 00:00:00,NA,1,1,Kontrolle,2025-10-16,HI,fr
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,SM,ca
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,SM,com
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,HI,be
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,SM,co.uk
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,JHU,de
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,HI,es
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,SM,com.mx
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,HI,fr
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,HI,it
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,JHU,nl
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,JHU,sg
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,JHU,se
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,JHU,pl
-2025-10-15 00:00:00,NP,1,1,Kontrolle,2025-10-23,JHU,newegg
 2025-10-15 00:00:00,NA,1,1,Kontrolle,2025-10-27,DM,com.mx
 2025-10-15 00:00:00,NA,1,1,Kontrolle,2025-10-16,HI,tr
 2025-10-15 00:00:00,NA,1,1,Kontrolle,2025-10-21,DM,au
@@ -3073,3 +3059,4 @@ Timestamp,Group,RowID,Phase,DateField,Date,User,Marketplace
 2025-10-15 00:00:00,NH,1,1,Kontrolle,2025-10-28,SM,fr
 2025-10-15 00:00:00,NH,1,1,Kontrolle,2025-10-28,SM,com
 2025-10-15 00:00:00,NA,1,3, K am,2025-10-28,DM,tr
+
