@@ -1393,16 +1393,15 @@ def create_sample_image(title, message, width=500, height=200):
 
 def add_special_activities_section(story):
     """Add special activities section to the report."""
-    styles = getSampleStyleSheet()
-    heading_style = styles['Heading1']
-    subheading_style = styles['Heading2']
-    normal_style = styles['Normal']
-    
-    # Add page break before special activities section
+    # CHANGE 2: Pass the dates to get_special_activities
+    special_activities, total_activities, total_hours = get_special_activities(start_date, end_date)
+
+    if not special_activities:
+        logger.info("No special activities found for the period. Skipping section.")
+        return
+
     story.append(PageBreak())
-    
-    # Add section header
-    story.append(Paragraph("Special Activities", heading_style))
+    story.append(Paragraph("4. Special Activities", styles['h2']))
     story.append(Spacer(1, 5*mm))
     
     # Get special activities data
@@ -1798,7 +1797,7 @@ def create_weekly_report(start_date, end_date, force=False):
     # Add user details section
     add_user_details_section(story, metrics)
     # Add special activities section
-    add_special_activities_section(story)
+    add_special_activities_section(story, start_date, end_date)
     
     # Build the PDF
     doc.build(story)
@@ -2038,7 +2037,7 @@ def create_monthly_report(year, month, force=False):
     # Add user details section
     add_user_details_section(story, metrics)
     # Add special activities section
-    add_special_activities_section(story)
+    add_special_activities_section(story, start_date, end_date)
     
     # Build the PDF
     doc.build(story)
