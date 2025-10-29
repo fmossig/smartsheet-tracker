@@ -100,14 +100,18 @@ DATA_DIR = "tracking_data"
 REPORTS_DIR = "reports"
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
-# --- NEW: Constants for PDF Upload ---
-# TODO: Fill these with your actual Smartsheet IDs
-# The ID of the sheet where you want to upload the reports
-REPORT_UPLOAD_SHEET_ID = 7888169555939204  # e.g., 8391667138243332
-# The ID of the specific row where the PDF will be attached
-REPORT_UPLOAD_ROW_ID = 78603245653892    # e.g., 5334468835970948
-# --- END NEW ---
+# --- NEW: Constants for PDF Upload and Metadata ---
+# TODO: Fill this with the ID of the sheet you want to update
+REPORT_METADATA_SHEET_ID = 7888169555939204  # e.g., 8391667138243332
 
+# Row IDs for attaching the actual PDF files
+MONTHLY_REPORT_ATTACHMENT_ROW_ID = 5089581251235716
+WEEKLY_REPORT_ATTACHMENT_ROW_ID = 1192484760260484
+
+# Row IDs for writing the metadata (filename and date range)
+MONTHLY_METADATA_ROW_ID = 5089581251235716  # TODO: Get this from Smartsheet for "Row 3"
+WEEKLY_METADATA_ROW_ID = 1192484760260484    # TODO: Get this from Smartsheet for "Row 7"
+# --- END NEW ---
 # File paths
 CHANGES_FILE = os.path.join(DATA_DIR, "change_history.csv")
 
@@ -216,6 +220,18 @@ def collect_metrics(changes):
             metrics["group_phase_user"][group][phase][user] += 1
             
     return metrics
+
+def get_column_map(sheet_id):
+    """Fetches a map of column names to column IDs for a given sheet."""
+    try:
+        client = smartsheet.Smartsheet(token)
+        sheet = client.Sheets.get_sheet(sheet_id, include=['columns'])
+        column_map = {col.title: col.id for col in sheet.columns}
+        logger.info(f"Successfully created column map for sheet ID {sheet_id}.")
+        return column_map
+    except Exception as e:
+        logger.error(f"Failed to create column map for sheet ID {sheet_id}: {e}", exc_info=True)
+        return None
 
 def get_special_activities(days=30):
     """
@@ -1565,7 +1581,7 @@ def upload_pdf_to_smartsheet(file_path):
     """Uploads a given PDF file to a specific Smartsheet row."""
     
     # Check if the upload feature is configured
-    if not REPORT_UPLOAD_SHEET_ID or not REPORT_UPLOAD_ROW_ID:
+    if not REPORT_METADATA_SHEET_ID or not row_id: # Check for the passed row_id
         logger.warning("Smartsheet upload not configured. Skipping PDF upload.")
         return
 
@@ -1578,10 +1594,10 @@ def upload_pdf_to_smartsheet(file_path):
         logger.info(f"Uploading {os.path.basename(file_path)} to Smartsheet...")
         
         # --- THE FINAL, CORRECT IMPLEMENTATION ---
-        # The method is on the top-level Attachments object.
+        # Use the passed row_id
         client.Attachments.attach_file_to_row(
-            REPORT_UPLOAD_SHEET_ID,
-            REPORT_UPLOAD_ROW_ID,
+            REPORT_METADATA_SHEET_ID,
+            row_id,
             (os.path.basename(file_path), open(file_path, 'rb'), 'application/pdf')
         )
         # --- END CORRECTION ---
@@ -1590,6 +1606,50 @@ def upload_pdf_to_smartsheet(file_path):
         
     except Exception as e:
         logger.error(f"Failed to upload PDF to Smartsheet: {e}", exc_info=True)
+
+
+def update_smartsheet_cells(sheet_id, row_id, column_map, filename, date_range_str):
+    """Updates cells in a specific Smartsheet row with report metadata."""
+    
+    # Check if the feature is configured
+    if not all([sheet_id, row_id, column_map]):
+        logger.warning("Smartsheet cell update not configured. Skipping.")
+        return
+
+    try:
+        client = smartsheet.Smartsheet(token)
+        
+        # Get the Column IDs from our map
+        primary_col_id = column_map.get("Primäre Spalte")
+        secondary_col_id = column_map.get("Spalte 2")
+
+        if not primary_col_id or not secondary_col_id:
+            logger.error("Could not find 'Primäre Spalte' or 'Spalte 2' in the sheet's columns.")
+            return
+
+        # Build the cell objects with the new values
+        cell_filename = smartsheet.models.Cell({
+            'column_id': primary_col_id,
+            'value': filename
+        })
+        cell_date_range = smartsheet.models.Cell({
+            'column_id': secondary_col_id,
+            'value': date_range_str
+        })
+        
+        # Build the row object to be updated
+        row_to_update = smartsheet.models.Row({
+            'id': row_id,
+            'cells': [cell_filename, cell_date_range]
+        })
+        
+        logger.info(f"Updating metadata in row {row_id}...")
+        client.Sheets.update_rows(sheet_id, [row_to_update])
+        logger.info("Successfully updated Smartsheet cells.")
+
+    except Exception as e:
+        logger.error(f"Failed to update Smartsheet cells: {e}", exc_info=True)
+
 
 def create_weekly_report(start_date, end_date, force=False):
     """Create a weekly PDF report."""
@@ -1805,11 +1865,27 @@ def create_weekly_report(start_date, end_date, force=False):
     doc.build(story)
     logger.info(f"Weekly report created: {filename}")
     
-    # --- NEW: Upload the generated PDF ---
-    upload_pdf_to_smartsheet(filename)
+    # --- NEW: Upload PDF and update metadata cells ---
+    if REPORT_METADATA_SHEET_ID:
+        # 1. Upload the PDF to its attachment row
+        upload_pdf_to_smartsheet(filename, WEEKLY_REPORT_ATTACHMENT_ROW_ID)
+        
+        # 2. Get the column map for updating cells
+        column_map = get_column_map(REPORT_METADATA_SHEET_ID)
+        
+        # 3. Define the date string for the report
+        date_range_str = f"Week {start_date.strftime('%W')} ({start_date.strftime('%b %d')} - {end_date.strftime('%b %d, %Y')})"
+        
+        # 4. Update the metadata cells
+        update_smartsheet_cells(
+            REPORT_METADATA_SHEET_ID,
+            WEEKLY_METADATA_ROW_ID,
+            column_map,
+            os.path.basename(filename),
+            date_range_str
+        )
     # --- END NEW ---
     
-    # Log the absolute path for debugging
     logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
 
@@ -2029,11 +2105,27 @@ def create_monthly_report(year, month, force=False):
     doc.build(story)
     logger.info(f"Monthly report created: {filename}")
     
-    # --- NEW: Upload the generated PDF ---
-    upload_pdf_to_smartsheet(filename)
+    # --- NEW: Upload PDF and update metadata cells ---
+    if REPORT_METADATA_SHEET_ID:
+        # 1. Upload the PDF to its attachment row
+        upload_pdf_to_smartsheet(filename, MONTHLY_REPORT_ATTACHMENT_ROW_ID)
+        
+        # 2. Get the column map for updating cells
+        column_map = get_column_map(REPORT_METADATA_SHEET_ID)
+        
+        # 3. Define the date string for the report
+        date_range_str = start_date.strftime('%B %Y') # e.g., "September 2025"
+        
+        # 4. Update the metadata cells
+        update_smartsheet_cells(
+            REPORT_METADATA_SHEET_ID,
+            MONTHLY_METADATA_ROW_ID,
+            column_map,
+            os.path.basename(filename),
+            date_range_str
+        )
     # --- END NEW ---
     
-    # Log the absolute path for debugging
     logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
 
