@@ -1411,12 +1411,13 @@ def create_sample_image(title, message, width=500, height=200):
     
     return drawing
 
-def add_special_activities_section(story):
-    """Add special activities section to the report."""
-    # CHANGE 2: Pass the dates to get_special_activities
-    special_activities, total_activities, total_hours = get_special_activities(start_date, end_date)
+def add_special_activities_section(story, start_date, end_date):
+    """Adds the special activities summary and chart to the report story, using the correct date range."""
+    
+    # Get all special activities for the report's date range
+    user_activity_data, total_activities, total_hours = get_special_activities(start_date, end_date)
 
-    if not special_activities:
+    if not user_activity_data:
         logger.info("No special activities found for the period. Skipping section.")
         return
 
@@ -1424,18 +1425,26 @@ def add_special_activities_section(story):
     story.append(Paragraph("4. Special Activities", styles['h2']))
     story.append(Spacer(1, 5*mm))
     
-    # Get special activities data
-    category_hours, total_hours = get_special_activities(days=30)
+    # --- NEW: Process the data for the pie chart ---
+    # The get_special_activities function returns data per-user. We need to aggregate it by category.
+    category_hours_agg = defaultdict(float)
+    for user_data in user_activity_data.values():
+        for category, hours in user_data.get("categories", {}).items():
+            category_hours_agg[category] += hours
     
+    # Sort the aggregated categories by hours
+    sorted_category_hours = sorted(category_hours_agg.items(), key=lambda x: x[1], reverse=True)
+    # --- END NEW ---
+
     # Add summary text
     story.append(Paragraph(
-        f"Overview of special activities in the last 30 days. Total hours: {total_hours:.1f}",
+        f"Overview of special activities from {start_date.strftime('%b %d')} to {end_date.strftime('%b %d')}. Total hours: {total_hours:.1f}",
         normal_style
     ))
     story.append(Spacer(1, 5*mm))
     
-    # Create and add pie chart - THIS MUST REMAIN
-    pie_chart = create_activities_pie_chart(category_hours, total_hours)
+    # Create and add pie chart using the correctly aggregated and sorted data
+    pie_chart = create_activities_pie_chart(sorted_category_hours, total_hours)
     story.append(pie_chart)
     
     # Add table with details
@@ -1443,7 +1452,7 @@ def add_special_activities_section(story):
     story.append(Paragraph("Detailed Breakdown", subheading_style))
     
     # Create and add breakdown table
-    breakdown_table = create_special_activities_breakdown(category_hours, total_hours)
+    breakdown_table = create_special_activities_breakdown(sorted_category_hours, total_hours)
     story.append(breakdown_table)
 
 def add_user_details_section(story, metrics):
