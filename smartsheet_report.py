@@ -1626,10 +1626,11 @@ def update_smartsheet_cells(sheet_id, row_id, column_map, filename, date_range_s
         
         # Get the Column IDs from our map
         primary_col_id = column_map.get("Primäre Spalte")
-        secondary_col_id = column_map.get("Spalte 2")
+        # --- CORRECTED: Removed the space in "Spalte 2" ---
+        secondary_col_id = column_map.get("Spalte2")
 
         if not primary_col_id or not secondary_col_id:
-            logger.error("Could not find 'Primäre Spalte' or 'Spalte 2' in the sheet's columns.")
+            logger.error("Could not find 'Primäre Spalte' or 'Spalte2' in the sheet's columns.")
             return
 
         # Build the cell objects with the new values
