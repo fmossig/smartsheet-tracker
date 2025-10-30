@@ -1471,6 +1471,73 @@ def draw_half_circle_gauge(value_percentage, total_value, label, width=250, heig
     
     return drawing
 
+def create_stacked_gauge_chart(summary_data, width=500, height=150):
+    """Creates a custom stacked half-circle gauge chart for overdue statuses."""
+    
+    drawing = Drawing(width, height)
+    
+    # Define the categories and their colors in the desired order for stacking
+    status_categories = {
+        "Aktuell": colors.HexColor("#2ca02c"),              # Green
+        "0 - 30 Tage drüber": colors.HexColor("#ff7f0e"),      # Orange
+        "31 - 60": colors.HexColor("#d62728"),              # Red
+        "über 60 Tage drüber": colors.HexColor("#9467bd")  # Purple
+    }
+
+    # Extract and clean values
+    status_values = {}
+    for cat in status_categories:
+        try:
+            value_str = str(summary_data.get(cat, '0') or '0').replace('.', '')
+            status_values[cat] = int(value_str)
+        except (ValueError, TypeError):
+            status_values[cat] = 0
+            
+    total_products = sum(status_values.values())
+
+    if total_products == 0:
+        drawing.add(String(width/2, height/2, "No overdue status data available.", textAnchor='middle'))
+        return drawing
+
+    # Gauge properties
+    cx, cy = width / 2, height * 0.4
+    radius = min(width, height) * 0.8 / 2
+
+    # Draw the segments
+    start_angle = 180  # Start from the left
+    for category, color in status_categories.items():
+        value = status_values[category]
+        if value > 0:
+            percentage = value / total_products
+            angle_extent = percentage * 180  # The size of this segment in degrees
+            
+            # Draw the wedge for this segment
+            wedge = Wedge(cx, cy, radius, start_angle - angle_extent, start_angle, fillColor=color)
+            drawing.add(wedge)
+            
+            # Update the start angle for the next segment
+            start_angle -= angle_extent
+            
+    # Add a title and total count in the center
+    drawing.add(String(cx, cy - 15, f"Total: {total_products}", textAnchor='middle', fontName='Helvetica-Bold'))
+    drawing.add(String(cx, height - 20, "Product Overdue Status", textAnchor='middle', fontName='Helvetica-Bold'))
+
+    # Add a legend below the gauge
+    legend_y = 10
+    x_start = 50
+    legend_items = []
+    for category, value in status_values.items():
+        percentage = (value / total_products * 100) if total_products > 0 else 0
+        legend_items.append(f"{category}: {value} ({percentage:.1f}%)")
+    
+    # Draw legend
+    for i, (category, color) in enumerate(status_categories.items()):
+        drawing.add(Rect(x_start, legend_y, 8, 8, fillColor=color))
+        drawing.add(String(x_start + 12, legend_y, legend_items[i], fontName='Helvetica', fontSize=8))
+        x_start += stringWidth(legend_items[i], 'Helvetica', 8) + 25
+
+    return drawing
+
 def draw_full_gauge(total_value, label, width=250, height=150, color=colors.steelblue):
     """Draw a decorative half-circle gauge showing the total count."""
     # This is essentially draw_half_circle_gauge with 100% value
@@ -2080,94 +2147,56 @@ def create_monthly_report(year, month, force=False):
             # Add the gauge charts for this group - side by side
             story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
             story.append(Paragraph("Activity Metrics", subheading_style))
-                
-        # PASTE THIS NEW BLOCK IN ITS PLACE
-        try:
-            # 1. Fetch the summary data for the current group
-            sheet_id = SHEET_IDS.get(group)
-            if not sheet_id:
-                raise ValueError(f"No sheet ID found for group {group}")
-            
-            summary_data = get_sheet_summary_data(sheet_id)
-            if not summary_data:
-                raise ValueError("Could not fetch sheet summary data.")
+
+    # PASTE THIS NEW BLOCK IN ITS PLACE
+    try:
+        # 1. Fetch the summary data for the current group
+        sheet_id = SHEET_IDS.get(group)
+        if not sheet_id:
+            raise ValueError(f"No sheet ID found for group {group}")
         
-            # 2. Create the four overdue status gauges in a 2x2 grid
-            story.append(Paragraph("Product Overdue Status", subheading_style))
-            
-            status_defs = {
-                "Aktuell": {"color": colors.HexColor("#2ca02c")},
-                "0 - 30 Tage drüber": {"color": colors.HexColor("#ff7f0e")},
-                "31 - 60": {"color": colors.HexColor("#d62728")},
-        "über 60 Tage drüber": {"color": colors.HexColor("#9467bd")}
-            }
-            
-            status_values = {}
-            for cat in status_defs:
-                try:
-                    # Safely get and clean the value from the summary
-                    value_str = str(summary_data.get(cat, '0') or '0').replace('.', '')
-                    status_values[cat] = int(value_str)
-                except (ValueError, TypeError):
-                    status_values[cat] = 0
+        summary_data = get_sheet_summary_data(sheet_id)
+        if not summary_data:
+            raise ValueError("Could not fetch sheet summary data.")
+    
+        # 2. Create the new stacked gauge chart for overdue statuses
+        stacked_gauge = create_stacked_gauge_chart(summary_data)
+        story.append(stacked_gauge)
+        story.append(Spacer(1, 8*mm))
+    
+        # 3. Create the two total summary gauges
+        story.append(Paragraph("Total Product Counts", subheading_style))
+        group_color = GROUP_COLORS.get(group, colors.HexColor("#457B9D"))
+    
+        # Gauge 1: "Anzahl der Produkte"
+        anzahl_produkte = int(str(summary_data.get("Anzahl der Produkte", '0') or '0').replace('.', ''))
+        gauge_anzahl = draw_full_gauge(
+            anzahl_produkte,
+            "Anzahl der Produkte",
+            color=group_color,
+            width=250,
+            height=120
+        )
         
-            # The total for calculating percentages is the sum of all status categories
-            total_for_percent = sum(status_values.values())
-            
-            # Create a gauge for each status
-            status_gauges = {}
-            for status, config in status_defs.items():
-                count = status_values[status]
-                percentage = (count / total_for_percent * 100) if total_for_percent > 0 else 0
-                status_gauges[status] = draw_half_circle_gauge(
-                    percentage,
-                    count,
-                    status,
-                    color=config["color"],
-                    width=250,
-                    height=120 # Make gauges shorter to fit better
-                )
-                
-            # Arrange the four status gauges in a 2x2 table
-            status_gauge_table = Table([
-                [status_gauges["Aktuell"], status_gauges["0 - 30 Tage drüber"]],
-                [status_gauges["31 - 60"], status_gauges["über 60 Tage drüber"]]
-            ])
-            story.append(status_gauge_table)
-            story.append(Spacer(1, 8*mm))
+        # Gauge 2: "Summe aller Marktplatzartikel"
+        summe_artikel = int(str(summary_data.get("Summe aller Marktplatzartikel", '0') or '0').replace('.', ''))
+        gauge_summe = draw_full_gauge(
+            summe_artikel,
+            "Summe Marktplatzartikel",
+            color=group_color,
+            width=250,
+            height=120
+        )
         
-            # 3. Create the two total summary gauges
-            story.append(Paragraph("Total Product Counts", subheading_style))
-            group_color = GROUP_COLORS.get(group, colors.HexColor("#457B9D"))
-        
-            # Gauge 1: "Anzahl der Produkte" from summary
-            anzahl_produkte = int(str(summary_data.get("Anzahl der Produkte", '0') or '0').replace('.', ''))
-            gauge_anzahl = draw_full_gauge(
-                anzahl_produkte,
-                "Anzahl der Produkte",
-                color=group_color,
-                width=250,
-                height=120
-            )
-            
-            # Gauge 2: "Summe aller Marktplatzartikel" from summary
-            summe_artikel = int(str(summary_data.get("Summe aller Marktplatzartikel", '0') or '0').replace('.', ''))
-            gauge_summe = draw_full_gauge(
-                summe_artikel,
-                "Summe Marktplatzartikel",
-                color=group_color,
-                width=250,
-                height=120
-            )
-            
-            # Arrange the two total gauges side-by-side
-            total_gauge_table = Table([[gauge_anzahl, gauge_summe]])
-            story.append(total_gauge_table)
-        
-        except Exception as e:
-            logger.error(f"Error creating summary charts for group {group}: {e}", exc_info=True)
-            story.append(Paragraph(f"Could not generate summary metrics: {str(e)}", normal_style))
-        # END OF NEW BLOCK
+        # Arrange the two total gauges side-by-side
+        total_gauge_table = Table([[gauge_anzahl, gauge_summe]])
+        story.append(total_gauge_table)
+
+    except Exception as e:
+        logger.error(f"Error creating summary charts for group {group}: {e}", exc_info=True)
+        story.append(Paragraph(f"Could not generate summary metrics: {str(e)}", normal_style))
+    # END OF NEW BLOCK
+
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
