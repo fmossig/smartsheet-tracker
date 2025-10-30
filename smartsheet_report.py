@@ -2148,7 +2148,24 @@ def create_monthly_report(year, month, force=False):
             story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
             story.append(Paragraph("Activity Metrics", subheading_style))
 
-    # PASTE THIS NEW BLOCK IN ITS PLACE
+# PASTE THIS NEW, CORRECTED BLOCK IN ITS PLACE
+if phase_user_data:
+    chart, legend_data = make_group_detail_chart(
+        group, 
+        phase_user_data, 
+        f"User Activity by Phase for Group {group}"
+    )
+    story.append(chart)
+    
+    # Add horizontal legend below
+    if legend_data:
+        legend = create_horizontal_legend(legend_data, width=400)
+        story.append(legend)
+        
+    # Add the gauge charts for this group
+    story.append(Spacer(1, 8*mm))
+    story.append(Paragraph("Activity Metrics", subheading_style))
+    
     try:
         # 1. Fetch the summary data for the current group
         sheet_id = SHEET_IDS.get(group)
@@ -2158,16 +2175,16 @@ def create_monthly_report(year, month, force=False):
         summary_data = get_sheet_summary_data(sheet_id)
         if not summary_data:
             raise ValueError("Could not fetch sheet summary data.")
-    
+
         # 2. Create the new stacked gauge chart for overdue statuses
         stacked_gauge = create_stacked_gauge_chart(summary_data)
         story.append(stacked_gauge)
         story.append(Spacer(1, 8*mm))
-    
+
         # 3. Create the two total summary gauges
         story.append(Paragraph("Total Product Counts", subheading_style))
         group_color = GROUP_COLORS.get(group, colors.HexColor("#457B9D"))
-    
+
         # Gauge 1: "Anzahl der Produkte"
         anzahl_produkte = int(str(summary_data.get("Anzahl der Produkte", '0') or '0').replace('.', ''))
         gauge_anzahl = draw_full_gauge(
@@ -2195,10 +2212,32 @@ def create_monthly_report(year, month, force=False):
     except Exception as e:
         logger.error(f"Error creating summary charts for group {group}: {e}", exc_info=True)
         story.append(Paragraph(f"Could not generate summary metrics: {str(e)}", normal_style))
-    # END OF NEW BLOCK
-
-        else:
-            story.append(Paragraph("No detailed data available for this group", normal_style))
+        
+    # Add marketplace activity metrics after the gauge charts
+    story.append(Spacer(1, 8*mm))
+    story.append(Paragraph("Marketplace Activity", subheading_style))
+    
+    # Get marketplace activity data
+    most_active, most_inactive = get_marketplace_activity(group, SHEET_IDS[group], start_date, end_date)
+    
+    # Create tables for most active and inactive marketplaces
+    active_table = create_activity_table(most_active, "Most Active")
+    inactive_table = create_activity_table(most_inactive, "Most Inactive")
+    
+    marketplace_table_data = [
+        [Paragraph("Most Active", subheading_style), Paragraph("Most Inactive", subheading_style)],
+        [active_table, inactive_table]
+    ]
+    marketplace_table = Table(marketplace_table_data, colWidths=[75*mm, 75*mm])
+    marketplace_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('ALIGN', (0,0), (-1,0), 'CENTER'),
+    ]))
+    story.append(marketplace_table)
+        
+else:
+    story.append(Paragraph("No detailed data available for this group", normal_style))
+# END OF NEW BLOCK
     
     # Add user details section
     add_user_details_section(story, metrics)
