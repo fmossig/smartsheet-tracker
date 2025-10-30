@@ -2008,8 +2008,6 @@ def create_weekly_report(start_date, end_date, force=False):
     logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
 
-V
-
 def get_previous_week():
     """Get the start and end dates for the previous week (Monday to Sunday)."""
     today = date.today()
