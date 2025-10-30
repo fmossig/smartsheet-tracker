@@ -2092,20 +2092,62 @@ def create_monthly_report(year, month, force=False):
             if not summary_data:
                 raise ValueError("Could not fetch sheet summary data.")
         
-            # 2. Create the new Overdue Status Chart
-            overdue_chart = create_overdue_status_chart(summary_data)
-            story.append(overdue_chart)
-            story.append(Spacer(1, 8*mm))
+            # 2. Create the four overdue status gauges in a 2x2 grid
+            story.append(Paragraph("Product Overdue Status", subheading_style))
             
-            # 3. Create the three gauges
-            group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
+            status_defs = {
+                "Aktuell": {"color": colors.HexColor("#2ca02c")},
+                "0 - 30 Tage drüber": {"color": colors.HexColor("#ff7f0e")},
+                "31 - 60": {"color": colors.HexColor("#d62728")},
+        "über 60 Tage drüber": {"color": colors.HexColor("#9467bd")}
+            }
+            
+            status_values = {}
+            for cat in status_defs:
+                try:
+                    # Safely get and clean the value from the summary
+                    value_str = str(summary_data.get(cat, '0') or '0').replace('.', '')
+                    status_values[cat] = int(value_str)
+                except (ValueError, TypeError):
+                    status_values[cat] = 0
+        
+            # The total for calculating percentages is the sum of all status categories
+            total_for_percent = sum(status_values.values())
+            
+            # Create a gauge for each status
+            status_gauges = {}
+            for status, config in status_defs.items():
+                count = status_values[status]
+                percentage = (count / total_for_percent * 100) if total_for_percent > 0 else 0
+                status_gauges[status] = draw_half_circle_gauge(
+                    percentage,
+                    count,
+                    status,
+                    color=config["color"],
+                    width=250,
+                    height=120 # Make gauges shorter to fit better
+                )
+                
+            # Arrange the four status gauges in a 2x2 table
+            status_gauge_table = Table([
+                [status_gauges["Aktuell"], status_gauges["0 - 30 Tage drüber"]],
+                [status_gauges["31 - 60"], status_gauges["über 60 Tage drüber"]]
+            ])
+            story.append(status_gauge_table)
+            story.append(Spacer(1, 8*mm))
+        
+            # 3. Create the two total summary gauges
+            story.append(Paragraph("Total Product Counts", subheading_style))
+            group_color = GROUP_COLORS.get(group, colors.HexColor("#457B9D"))
         
             # Gauge 1: "Anzahl der Produkte" from summary
             anzahl_produkte = int(str(summary_data.get("Anzahl der Produkte", '0') or '0').replace('.', ''))
             gauge_anzahl = draw_full_gauge(
                 anzahl_produkte,
                 "Anzahl der Produkte",
-                color=group_color
+                color=group_color,
+                width=250,
+                height=120
             )
             
             # Gauge 2: "Summe aller Marktplatzartikel" from summary
@@ -2113,22 +2155,14 @@ def create_monthly_report(year, month, force=False):
             gauge_summe = draw_full_gauge(
                 summe_artikel,
                 "Summe Marktplatzartikel",
-                color=group_color
-            )
-        
-            # Gauge 3: Original "Total Products" from hardcoded dictionary
-            total_products_hardcoded = TOTAL_PRODUCTS.get(group, 0)
-            gauge_total_hardcoded = draw_full_gauge(
-                total_products_hardcoded,
-                "Total Products (Config)",
-                color=group_color
+                color=group_color,
+                width=250,
+                height=120
             )
             
-            # 4. Place the three gauges side-by-side in a table
-            gauge_table_data = [[gauge_anzahl, gauge_summe, gauge_total_hardcoded]]
-            # Adjusting colWidths to be safe
-            gauge_table = Table(gauge_table_data, colWidths=[A4[0]/3 - 25*mm, A4[0]/3 - 25*mm, A4[0]/3 - 25*mm])
-            story.append(gauge_table)
+            # Arrange the two total gauges side-by-side
+            total_gauge_table = Table([[gauge_anzahl, gauge_summe]])
+            story.append(total_gauge_table)
         
         except Exception as e:
             logger.error(f"Error creating summary charts for group {group}: {e}", exc_info=True)
