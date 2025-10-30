@@ -268,9 +268,9 @@ def create_overdue_status_chart(summary_data, width=500, height=80):
     # Define the categories and their colors
     status_categories = {
         "Aktuell": colors.HexColor("#2ca02c"),  # Green
-        "0 - 30 Tage drüber": colors.HexColor("#ff7f0e"),  # Orange
+        "<30": colors.HexColor("#ff7f0e"),  # Orange
         "31 - 60": colors.HexColor("#d62728"),  # Red
-        "über 60 Tage drüber": colors.HexColor("#9467bd")  # Purple
+        ">60": colors.HexColor("#9467bd")  # Purple
     }
 
     # Extract values from summary_data, handling potential errors
@@ -1479,9 +1479,9 @@ def create_stacked_gauge_chart(summary_data, width=500, height=150):
     # Define the categories and their colors in the desired order for stacking
     status_categories = {
         "Aktuell": colors.HexColor("#2ca02c"),              # Green
-        "0 - 30 Tage drüber": colors.HexColor("#ff7f0e"),      # Orange
+        "<30": colors.HexColor("#ff7f0e"),      # Orange
         "31 - 60": colors.HexColor("#d62728"),              # Red
-        "über 60 Tage drüber": colors.HexColor("#9467bd")  # Purple
+        ">60": colors.HexColor("#9467bd")  # Purple
     }
 
     # Extract and clean values
