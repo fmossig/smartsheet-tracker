@@ -52,6 +52,7 @@ SHEET_IDS = {
     "SPECIAL": 5261724614610820,  # Adding special activities sheet ID
 }
 
+SPECIAL_ACTIVITIES_SHEET_ID = SHEET_IDS.get("SPECIAL")
 # Color scheme
 GROUP_COLORS = {
     "NA": colors.HexColor("#E63946"),
