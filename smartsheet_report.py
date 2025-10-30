@@ -1972,8 +1972,8 @@ def create_weekly_report(start_date, end_date, force=False):
                 logger.error(f"Error creating gauge charts for group {group}: {e}")
                 # Add a placeholder if there's an error
                 story.append(Paragraph(f"Could not generate gauge charts: {str(e)}", normal_style))
-        else:
-            story.append(Paragraph("No detailed data available for this group", normal_style))
+            else:
+                story.append(Paragraph("No detailed data available for this group", normal_style))
     
     # Add user details section
     add_user_details_section(story, metrics)
