@@ -2008,6 +2008,161 @@ def create_weekly_report(start_date, end_date, force=False):
     logger.info(f"Report file created at: {os.path.abspath(filename)}")
     return filename
 
+# PASTE THIS AS THE NEW create_monthly_report FUNCTION
+def create_monthly_report(year, month, force=False):
+    """Create a monthly PDF report."""
+    # Determine the month's date range
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end_date = date(year, month + 1, 1) - timedelta(days=1)
+    
+    # Generate output filename
+    month_str = f"{year}-{month:02d}"
+    out_dir = os.path.join(REPORTS_DIR, "monthly")
+    os.makedirs(out_dir, exist_ok=True)
+    filename = os.path.join(out_dir, f"monthly_report_{month_str}.pdf")
+    
+    # Load changes for the month
+    changes = load_changes(start_date, end_date)
+    
+    has_data = len(changes) > 0
+    if not changes and not force:
+        logger.warning(f"No changes found for month {month_str}")
+        return None
+        
+    all_changes = changes if has_data else load_changes()
+    metrics = collect_metrics(changes if has_data else all_changes)
+    
+    doc = SimpleDocTemplate(filename, pagesize=A4,
+                          leftMargin=25*mm, rightMargin=25*mm,
+                          topMargin=20*mm, bottomMargin=20*mm)
+    
+    styles = getSampleStyleSheet()
+    title_style = styles['Title']
+    heading_style = styles['Heading1']
+    subheading_style = styles['Heading2']
+    normal_style = styles['Normal']
+    
+    story = []
+    
+    story.append(Paragraph(f"Monthly Smartsheet Changes Report", title_style))
+    
+    if not has_data:
+        story.append(Paragraph(f"Period: {start_date.strftime('%B %Y')}", normal_style))
+        story.append(Paragraph(f"<i>No data for this period. Showing sample with data from all available history.</i>", normal_style))
+    else:
+        story.append(Paragraph(f"Period: {start_date.strftime('%B %Y')}", normal_style))
+    
+    story.append(Spacer(1, 10*mm))
+    
+    story.append(Paragraph("Monthly Summary", heading_style))
+    summary_data = [
+        ["Total Changes", str(metrics["total_changes"])],
+        ["Groups with Activity", str(len(metrics["groups"]))],
+        ["Users Active", str(len(metrics["users"]))],
+    ]
+    summary_table = Table(summary_data, colWidths=[100*mm, 50*mm])
+    summary_table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), ('ALIGN', (1,0), (1,-1), 'RIGHT')]))
+    story.append(summary_table)
+    story.append(Spacer(1, 10*mm))
+    
+    story.append(Paragraph("Activity Overview", heading_style))
+    group_chart = make_group_bar_chart(metrics["groups"], "Changes by Group")
+    phase_chart = make_phase_bar_chart(metrics["phases"], "Changes by Phase")
+    chart_table_data = [[group_chart, phase_chart]]
+    chart_table = Table(chart_table_data)
+    story.append(chart_table)
+    story.append(Spacer(1, 15*mm))
+    
+    for group, count in sorted(metrics["group_phase_user"].items(), key=lambda x: x[0]):
+        if not group:
+            continue
+            
+        story.append(PageBreak())
+        
+        group_color = GROUP_COLORS.get(group, colors.steelblue)
+        group_header_data = [[f"Group {group} Details"]]
+        group_header = Table(group_header_data, colWidths=[150*mm], rowHeights=[10*mm])
+        group_header.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), group_color), ('TEXTCOLOR', (0,0), (-1,-1), colors.white), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'), ('FONTSIZE', (0,0), (-1,-1), 14)]))
+        story.append(group_header)
+        story.append(Spacer(1, 5*mm))
+        
+        story.append(Paragraph(f"Total changes: {metrics['groups'].get(group, 0)}", normal_style))
+        
+        phase_user_data = metrics["group_phase_user"].get(group, {})
+        if phase_user_data:
+            chart, legend_data = make_group_detail_chart(group, phase_user_data, f"User Activity by Phase for Group {group}")
+            story.append(chart)
+            
+            if legend_data:
+                legend = create_horizontal_legend(legend_data, width=400)
+                story.append(legend)
+                
+            story.append(Spacer(1, 8*mm))
+            story.append(Paragraph("Activity Metrics", subheading_style))
+            
+            try:
+                sheet_id = SHEET_IDS.get(group)
+                if not sheet_id:
+                    raise ValueError(f"No sheet ID found for group {group}")
+                
+                summary_data = get_sheet_summary_data(sheet_id)
+                if not summary_data:
+                    raise ValueError("Could not fetch sheet summary data.")
+
+                stacked_gauge = create_stacked_gauge_chart(summary_data)
+                story.append(stacked_gauge)
+                story.append(Spacer(1, 8*mm))
+
+                story.append(Paragraph("Total Product Counts", subheading_style))
+                group_color = GROUP_COLORS.get(group, colors.HexColor("#457B9D"))
+
+                anzahl_produkte = int(str(summary_data.get("Anzahl der Produkte", '0') or '0').replace('.', ''))
+                gauge_anzahl = draw_full_gauge(anzahl_produkte, "Anzahl der Produkte", color=group_color, width=250, height=120)
+                
+                summe_artikel = int(str(summary_data.get("Summe aller Marktplatzartikel", '0') or '0').replace('.', ''))
+                gauge_summe = draw_full_gauge(summe_artikel, "Summe Marktplatzartikel", color=group_color, width=250, height=120)
+                
+                total_gauge_table = Table([[gauge_anzahl, gauge_summe]])
+                story.append(total_gauge_table)
+
+            except Exception as e:
+                logger.error(f"Error creating summary charts for group {group}: {e}", exc_info=True)
+                story.append(Paragraph(f"Could not generate summary metrics: {str(e)}", normal_style))
+                
+            story.append(Spacer(1, 8*mm))
+            story.append(Paragraph("Marketplace Activity", subheading_style))
+            
+            most_active, most_inactive = get_marketplace_activity(group, SHEET_IDS[group], start_date, end_date)
+            
+            active_table = create_activity_table(most_active, "Most Active")
+            inactive_table = create_activity_table(most_inactive, "Most Inactive")
+            
+            marketplace_table_data = [[Paragraph("Most Active", subheading_style), Paragraph("Most Inactive", subheading_style)], [active_table, inactive_table]]
+            marketplace_table = Table(marketplace_table_data, colWidths=[75*mm, 75*mm])
+            marketplace_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,0), 'CENTER')]))
+            story.append(marketplace_table)
+                
+        else:
+            story.append(Paragraph("No detailed data available for this group", normal_style))
+    
+    add_user_details_section(story, metrics)
+    add_special_activities_section(story, start_date, end_date)
+    
+    doc.build(story)
+    logger.info(f"Monthly report created: {filename}")
+    
+    if REPORT_METADATA_SHEET_ID:
+        upload_pdf_to_smartsheet(filename, MONTHLY_REPORT_ATTACHMENT_ROW_ID)
+        column_map = get_column_map(REPORT_METADATA_SHEET_ID)
+        date_range_str = start_date.strftime('%B %Y')
+        update_smartsheet_cells(REPORT_METADATA_SHEET_ID, MONTHLY_METADATA_ROW_ID, column_map, os.path.basename(filename), date_range_str)
+    
+    logger.info(f"Report file created at: {os.path.abspath(filename)}")
+    return filename
+
 def get_previous_week():
     """Get the start and end dates for the previous week (Monday to Sunday)."""
     today = date.today()
