@@ -58,37 +58,29 @@ jobs:
             echo "task=weekly-report" >> $GITHUB_OUTPUT
           elif [[ "$HOUR" == "02" && "$DAY" == "01" ]]; then
             echo "task=monthly-report" >> $GITHUB_OUTPUT
+          else
+            echo "No scheduled task for this time."
           fi
 
       - name: Run track
-        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'track') || (github.event_name == 'schedule' && steps.determine-task.outputs.task == 'track')
+        # CORRECTED: This condition is now robust and won't fail on scheduled runs.
+        if: github.event.inputs.action == 'track' || (success() && steps.determine-task.outputs.task == 'track')
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
-          # --- START DEBUGGING ---
-          echo "DEBUG: Running the 'track' task."
-          echo "DEBUG: Listing files in the current directory:"
-          ls -l
-          echo "DEBUG: Attempting to run smartsheet_tracker.py..."
-          # --- END DEBUGGING ---
-          
           python smartsheet_tracker.py
-          
-          # --- START DEBUGGING ---
-          echo "DEBUG: Python script finished. Exit code: $?"
-          echo "DEBUG: Checking for log file:"
-          ls -l smartsheet_tracker.log || echo "DEBUG: smartsheet_tracker.log not found."
-          # --- END DEBUGGING ---
 
       - name: Run weekly report
-        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'weekly-report') || (github.event_name == 'schedule' && steps.determine-task.outputs.task == 'weekly-report')
+        # CORRECTED: This condition is now robust.
+        if: github.event.inputs.action == 'weekly-report' || (success() && steps.determine-task.outputs.task == 'weekly-report')
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
           python smartsheet_report.py --weekly --previous --force
 
       - name: Run monthly report
-        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'monthly-report') || (github.event_name == 'schedule' && steps.determine-task.outputs.task == 'monthly-report')
+        # CORRECTED: This condition is now robust.
+        if: github.event.inputs.action == 'monthly-report' || (success() && steps.determine-task.outputs.task == 'monthly-report')
         env:
           SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
         run: |
@@ -124,14 +116,15 @@ jobs:
           path: |
             smartsheet_tracker.log
             smartsheet_report.log
-          if-no-files-found: warn # Use warn to avoid failing the job
+          if-no-files-found: warn # Changed to warn to prevent unnecessary warnings
 
       - name: Commit changes
+        if: github.event.inputs.action != '' || steps.determine-task.outputs.task != ''
         run: |
           git config user.name 'GitHub Actions'
           git config user.email 'actions@github.com'
           mkdir -p reports/weekly reports/monthly
           git add tracking_data/ reports/
-          COMMIT_MSG="${{ github.event.inputs.action || steps.determine-task.outputs.task || 'Scheduled update' }} $(date +'%Y-%m-%d')"
+          COMMIT_MSG="${{ github.event.inputs.action || steps.determine-task.outputs.task }} $(date +'%Y-%m-%d')"
           git commit -m "$COMMIT_MSG" || echo "No changes to commit"
           git push
