@@ -239,6 +239,90 @@ def get_column_map(sheet_id):
         logger.error(f"Failed to create column map for sheet ID {sheet_id}: {e}", exc_info=True)
         return None
 
+def get_sheet_summary_data(sheet_id):
+    """Fetches the sheet summary fields for a given sheet."""
+    try:
+        client = smartsheet.Smartsheet(token)
+        logger.info(f"Fetching sheet summary for sheet ID {sheet_id}...")
+        
+        # This is the core API call to get the summary
+        summary = client.Sheets.get_sheet_summary(sheet_id)
+        
+        # Convert the list of summary fields into a simple dictionary
+        summary_data = {field.title: field.display_value for field in summary.fields}
+        
+        logger.info(f"Successfully fetched {len(summary_data)} summary fields.")
+        return summary_data
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch sheet summary for sheet ID {sheet_id}: {e}", exc_info=True)
+        return None
+
+
+def create_overdue_status_chart(summary_data, width=500, height=80):
+    """Creates a horizontal stacked bar chart for product overdue status."""
+    
+    drawing = Drawing(width, height)
+    
+    # Define the categories and their colors
+    status_categories = {
+        "Aktuell": colors.HexColor("#2ca02c"),  # Green
+        "0 - 30 Tage drüber": colors.HexColor("#ff7f0e"),  # Orange
+        "31 - 60": colors.HexColor("#d62728"),  # Red
+        "über 60 Tage drüber": colors.HexColor("#9467bd")  # Purple
+    }
+
+    # Extract values from summary_data, handling potential errors
+    status_values = {}
+    for cat in status_categories:
+        try:
+            # Ensure the value is treated as a number, default to 0
+            value = summary_data.get(cat, '0') or '0'
+            status_values[cat] = int(str(value).replace('.', ''))
+        except (ValueError, TypeError):
+            status_values[cat] = 0
+            
+    total_products = sum(status_values.values())
+
+    if total_products == 0:
+        drawing.add(String(width/2, height/2, "No overdue status data available.", textAnchor='middle'))
+        return drawing
+
+    # Chart dimensions
+    chart_x = 50
+    chart_width = width - 100
+    bar_height = 25
+    y_pos = 30
+
+    # Draw the stacked bar segments
+    x_start = chart_x
+    for category, color in status_categories.items():
+        value = status_values[category]
+        if value > 0:
+            segment_width = (value / total_products) * chart_width
+            
+            rect = Rect(x_start, y_pos, segment_width, bar_height, fillColor=color, strokeColor=colors.black, strokeWidth=0.5)
+            drawing.add(rect)
+            
+            if segment_width > 30:
+                label = String(x_start + segment_width/2, y_pos + bar_height/2 - 4, str(value), textAnchor='middle', fillColor=colors.white)
+                drawing.add(label)
+            
+            x_start += segment_width
+
+    drawing.add(String(width/2, height - 20, "Product Overdue Status Breakdown", textAnchor='middle', fontName='Helvetica-Bold'))
+
+    # Add a legend below the bar
+    legend_y = 10
+    x_start = chart_x
+    for category, color in status_categories.items():
+        drawing.add(Rect(x_start, legend_y, 8, 8, fillColor=color))
+        drawing.add(String(x_start + 12, legend_y, category, fontName='Helvetica', fontSize=8))
+        x_start += stringWidth(category, 'Helvetica', 8) + 30
+        
+    return drawing
+
+
 def get_special_activities(start_date, end_date):
     """Fetches and processes special activities from the designated sheet."""
     if not SPECIAL_ACTIVITIES_SHEET_ID:
@@ -1996,70 +2080,59 @@ def create_monthly_report(year, month, force=False):
             story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
             story.append(Paragraph("Activity Metrics", subheading_style))
                 
-            # Get smartsheet data for gauges filtered by group
-            try:
-                metrics_data = query_smartsheet_data(group)
-                
-                # Get color for this group
-                group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
-                
-                # Get the fixed total products for this group
-                total_products = TOTAL_PRODUCTS.get(group, 0)
-                
-                # Calculate correct percentage based on fixed product count
-                if total_products > 0:
-                    correct_percentage = (metrics_data["recent_activity_items"] / total_products) * 100
-                else:
-                    correct_percentage = 0
-                
-                # Create both gauge charts with same color
-                recent_gauge = draw_half_circle_gauge(
-                    correct_percentage,  # Use our recalculated percentage
-                    metrics_data["recent_activity_items"],
-                    "30-Day Activity",
-                    color=group_color
-                )
-                
-                # Use fixed total products value
-                total_gauge = draw_full_gauge(
-                    total_products,
-                    "Total Products",
-                    color=group_color
-                )
-                
-                # Put them in a table side by side
-                gauge_table_data = [[recent_gauge, total_gauge]]
-                gauge_table = Table(gauge_table_data)
-                story.append(gauge_table)
-                
-                # Add marketplace activity metrics after the gauge charts
-                story.append(Spacer(1, 8*mm))  # REDUCED from 15mm to 8mm
-                story.append(Paragraph("Marketplace Activity", subheading_style))
-                
-                # Get marketplace activity data
-                most_active, most_inactive = get_marketplace_activity(group, SHEET_IDS[group], start_date, end_date)
-                
-                # Create tables for most active and inactive marketplaces - SIDE BY SIDE
-                active_table = create_activity_table(most_active, "Most Active")
-                inactive_table = create_activity_table(most_inactive, "Most Inactive")
-                
-                # Place tables side by side with FIXED WIDTHS to prevent overflow
-                marketplace_table_data = [
-                    [Paragraph("Most Active", subheading_style), 
-                     Paragraph("Most Inactive", subheading_style)],
-                    [active_table, inactive_table]
-                ]
-                marketplace_table = Table(marketplace_table_data, colWidths=[75*mm, 75*mm])  # Fixed column widths
-                marketplace_table.setStyle(TableStyle([
-                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                    ('ALIGN', (0,0), (-1,0), 'CENTER'),
-                ]))
-                story.append(marketplace_table)
-                    
-            except Exception as e:
-                logger.error(f"Error creating gauge charts for group {group}: {e}")
-                # Add a placeholder if there's an error
-                story.append(Paragraph(f"Could not generate metrics: {str(e)}", normal_style))
+        # PASTE THIS NEW BLOCK IN ITS PLACE
+        try:
+            # 1. Fetch the summary data for the current group
+            sheet_id = SHEET_IDS.get(group)
+            if not sheet_id:
+                raise ValueError(f"No sheet ID found for group {group}")
+            
+            summary_data = get_sheet_summary_data(sheet_id)
+            if not summary_data:
+                raise ValueError("Could not fetch sheet summary data.")
+        
+            # 2. Create the new Overdue Status Chart
+            overdue_chart = create_overdue_status_chart(summary_data)
+            story.append(overdue_chart)
+            story.append(Spacer(1, 8*mm))
+            
+            # 3. Create the three gauges
+            group_color = GROUP_COLORS.get(group, colors.HexColor("#2ecc71"))
+        
+            # Gauge 1: "Anzahl der Produkte" from summary
+            anzahl_produkte = int(str(summary_data.get("Anzahl der Produkte", '0') or '0').replace('.', ''))
+            gauge_anzahl = draw_full_gauge(
+                anzahl_produkte,
+                "Anzahl der Produkte",
+                color=group_color
+            )
+            
+            # Gauge 2: "Summe aller Marktplatzartikel" from summary
+            summe_artikel = int(str(summary_data.get("Summe aller Marktplatzartikel", '0') or '0').replace('.', ''))
+            gauge_summe = draw_full_gauge(
+                summe_artikel,
+                "Summe Marktplatzartikel",
+                color=group_color
+            )
+        
+            # Gauge 3: Original "Total Products" from hardcoded dictionary
+            total_products_hardcoded = TOTAL_PRODUCTS.get(group, 0)
+            gauge_total_hardcoded = draw_full_gauge(
+                total_products_hardcoded,
+                "Total Products (Config)",
+                color=group_color
+            )
+            
+            # 4. Place the three gauges side-by-side in a table
+            gauge_table_data = [[gauge_anzahl, gauge_summe, gauge_total_hardcoded]]
+            # Adjusting colWidths to be safe
+            gauge_table = Table(gauge_table_data, colWidths=[A4[0]/3 - 25*mm, A4[0]/3 - 25*mm, A4[0]/3 - 25*mm])
+            story.append(gauge_table)
+        
+        except Exception as e:
+            logger.error(f"Error creating summary charts for group {group}: {e}", exc_info=True)
+            story.append(Paragraph(f"Could not generate summary metrics: {str(e)}", normal_style))
+        # END OF NEW BLOCK
         else:
             story.append(Paragraph("No detailed data available for this group", normal_style))
     
