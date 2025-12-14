@@ -1,7 +1,7 @@
 import os
 import csv
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import logging
 
 import smartsheet
@@ -83,48 +83,60 @@ def ensure_changes_file():
         with open(CHANGES_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow([
-                "Timestamp", 
-                "Group", 
+                "Timestamp",
+                "Group",
                 "RowID",
-                "Phase", 
-                "DateField", 
-                "Date", 
+                "Phase",
+                "DateField",
+                "Date",
                 "User",
                 "Marketplace"
             ])
             logger.info(f"Created new changes file: {CHANGES_FILE}")
 
-def parse_date(date_str):
-    """Parse date from string, supporting multiple formats."""
-    if not date_str:
+def parse_date(value):
+    """Parse date from Smartsheet cell values (string/date/datetime).
+
+    Smartsheet may return date columns as datetime.date / datetime.datetime objects
+    or as strings depending on column configuration and SDK behavior.
+    """
+    if not value:
         return None
-        
-    # Clean up common typos
-    cleaned = date_str.strip()
+
+    # Accept native date/datetime objects directly
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    # Fall back to string parsing
+    cleaned = str(value).strip()
+
+    # Clean up common trailing characters (e.g., accidental suffixes)
     if cleaned and not cleaned[-1].isdigit():
-        cleaned = cleaned.rstrip('abcdefghijklmnopqrstuvwxyz')
-        
+        cleaned = cleaned.rstrip('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+
     # Try various formats
     for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d.%m.%Y', '%m/%d/%Y', '%Y/%m/%d'):
         try:
             return datetime.strptime(cleaned, fmt).date()
         except ValueError:
             continue
-            
+
     try:
         # Try ISO format (catches many variations)
         return datetime.fromisoformat(cleaned).date()
-    except:
+    except Exception:
         return None
 
 def track_changes():
     """Main function to track changes in Smartsheet tables."""
     logger.info("Starting Smartsheet change tracking")
-    
+
     # Initialize
     state = load_state()
     ensure_changes_file()
-    
+
     # Connect to Smartsheet
     try:
         client = smartsheet.Smartsheet(token)
@@ -138,7 +150,7 @@ def track_changes():
     processed = state.get("processed", {})
     if not processed:
         logger.warning("State file has empty or invalid 'processed' dict - may detect ALL changes as new")
-    
+
     # Force detect one change for testing
     test_mode = False  # Set to True for testing
     if test_mode:
@@ -149,38 +161,34 @@ def track_changes():
             key_to_remove = random.choice(list(processed.keys()))
             logger.info(f"Removing key {key_to_remove} for test")
             processed.pop(key_to_remove, None)
-    
+
     # Current timestamp
     now = datetime.now()
-    
+
     # Track new changes
     changes_found = 0
-    
+
     # Open file in append mode
     with open(CHANGES_FILE, 'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        
+
         # Process each sheet
         for group, sheet_id in SHEET_IDS.items():
             logger.info(f"Processing sheet {group} (ID: {sheet_id})")
-            
+
             try:
                 # Get sheet with columns and rows
                 sheet = client.Sheets.get_sheet(sheet_id)
                 logger.info(f"Sheet {group} has {len(sheet.rows)} rows")
-                
+
                 # Map column titles to IDs
                 col_map = {col.title: col.id for col in sheet.columns}
                 amazon_col_id = col_map.get("Amazon")
-                
+
                 # Check which phase fields exist in this sheet
-                found_fields = []
-                for date_col, user_col, _ in PHASE_FIELDS:
-                    if date_col in col_map and user_col in col_map:
-                        found_fields.append(date_col)
-                
-                logger.info(f"Found tracked fields in sheet {group}: {found_fields}")
-                
+                found_fields = [date_col for date_col, user_col, _ in PHASE_FIELDS if date_col in col_map and user_col in col_map]
+                logger.info(f"Found {len(found_fields)} phase fields in {group}: {found_fields}")
+
                 # Process each row
                 for row in sheet.rows:
                     # Get marketplace if available
@@ -190,51 +198,51 @@ def track_changes():
                             if cell.column_id == amazon_col_id:
                                 marketplace = (cell.display_value or "").strip()
                                 break
-                    
+
                     # Check each phase field
                     for date_col, user_col, phase_no in PHASE_FIELDS:
                         if date_col not in col_map or user_col not in col_map:
                             continue
-                            
+
                         date_cell = None
                         user_cell = None
-                        
+
                         # Get date and user values
                         for cell in row.cells:
                             if cell.column_id == col_map[date_col]:
                                 date_cell = cell
                             if cell.column_id == col_map[user_col]:
                                 user_cell = cell
-                        
+
                         # Skip if no date value
                         if not date_cell or not date_cell.value:
                             continue
-                        
+
                         date_val = date_cell.value
                         user_val = user_cell.display_value if user_cell else ""
-                        
+
                         # Create unique key for this field
                         field_key = f"{group}:{row.id}:{date_col}"
-                        
+
                         # Check if changed - EXPLICITLY CAST BOTH TO STRING FOR COMPARISON
                         str_date_val = str(date_val).strip()
                         prev_val = state["processed"].get(field_key)
                         str_prev_val = str(prev_val).strip() if prev_val is not None else None
-                        
+
                         if str_prev_val == str_date_val:
                             continue
-                        
+
                         # Only log detailed info for changes
                         logger.info(f"Change detected in {field_key}")
                         logger.info(f"  Previous: '{prev_val}'")
                         logger.info(f"  Current:  '{date_val}'")
-                        
+
                         # Parse date
                         parsed_date = parse_date(date_val)
                         if not parsed_date:
                             logger.warning(f"Could not parse date: {date_val} for {field_key}")
                             continue
-                            
+
                         # Record the change
                         writer.writerow([
                             now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -246,45 +254,46 @@ def track_changes():
                             user_val,
                             marketplace
                         ])
-                        
-                        # Update state
-                        state["processed"][field_key] = date_val
+
+                        # Update state for this field (JSON-safe)
+                        state["processed"][field_key] = str_date_val
+
                         changes_found += 1
-                        
+
             except Exception as e:
                 logger.error(f"Error processing sheet {group}: {e}")
                 continue
-    
+
     # Update state
     state["last_run"] = now.strftime("%Y-%m-%d %H:%M:%S")
     save_state(state)
-    
+
     logger.info(f"Change tracking completed. Found {changes_found} changes.")
     return True
 
 def reset_tracking_state():
     """Reset the tracking state to current Smartsheet data."""
     logger.info("Resetting tracking state...")
-    
+
     # Connect to Smartsheet
     client = smartsheet.Smartsheet(token)
     state = {"last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "processed": {}}
-    
+
     # Process each sheet to build state
     for group, sid in SHEET_IDS.items():
         logger.info(f"Processing sheet {group}...")
         sheet = client.Sheets.get_sheet(sid)
-        
+
         # Map column titles to IDs
         col_map = {col.title: col.id for col in sheet.columns}
-        
+
         # Process each row
         for row in sheet.rows:
             for date_col, _, _ in PHASE_FIELDS:
                 col_id = col_map.get(date_col)
                 if not col_id:
                     continue
-                    
+
                 # Find cell with this column ID
                 for cell in row.cells:
                     if cell.column_id == col_id and cell.value:
@@ -292,102 +301,70 @@ def reset_tracking_state():
                         field_key = f"{group}:{row.id}:{date_col}"
                         state["processed"][field_key] = str(cell.value).strip()
                         break
-    
+
     # Save state
     save_state(state)
-    
+
     # Reset change history file
     with open(CHANGES_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Timestamp", 
-            "Group", 
+            "Timestamp",
+            "Group",
             "RowID",
-            "Phase", 
-            "DateField", 
-            "Date", 
+            "Phase",
+            "DateField",
+            "Date",
             "User",
             "Marketplace"
         ])
-    
+
     logger.info(f"Reset complete: Marked {len(state['processed'])} items as processed")
     return True
 
 def bootstrap_tracking(days_back=0):
     """Initialize tracking for new data only."""
     logger.info(f"Starting bootstrap (tracking new data only)")
-    
+
     # Reset state to force reprocessing
-    state = {"last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "processed": {}}
+    state = {"last_run": None, "processed": {}}
     save_state(state)
-    
-    # Ensure we have a new changes file
-    if os.path.exists(CHANGES_FILE):
-        # Create backup
-        backup_file = f"{CHANGES_FILE}.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        try:
-            os.rename(CHANGES_FILE, backup_file)
-            logger.info(f"Previous changes file backed up to {backup_file}")
-        except Exception as e:
-            logger.error(f"Failed to backup changes file: {e}")
-    
-    # Create new file and ensure report directories exist
-    ensure_changes_file()
-    
-    # Create report directories to avoid git errors
-    os.makedirs("reports/weekly", exist_ok=True)
-    os.makedirs("reports/monthly", exist_ok=True)
-    
-    # Get current data to build state
-    reset_tracking_state()
-    
-    logger.info("Bootstrap complete. System is ready to track new changes.")
-    return True
+
+    # Run tracking
+    return track_changes()
 
 def test_changes():
-    """Force a change for testing purposes."""
-    logger.info("Test mode: Forcing detection of changes")
-    
+    """Test function to force detect at least one change."""
+    logger.info("Testing change detection...")
+
     # Load state
     state = load_state()
     processed = state.get("processed", {})
-    
+
     if not processed:
-        logger.error("No processed items in state file to test with")
+        logger.error("No processed items found in state file. Run reset first.")
         return False
-    
-    # Modify some entries
-    keys = list(processed.keys())
-    if len(keys) >= 3:
-        # Modify 3 random entries
-        import random
-        test_keys = random.sample(keys, 3)
-        
-        for key in test_keys:
-            # Save original value for logging
-            original = processed[key]
-            # Delete the entry to force detection
-            del processed[key]
-            logger.info(f"Removed key {key} with value '{original}' for testing")
-    else:
-        # Just delete everything if less than 3 keys
-        logger.info(f"Removing all {len(keys)} keys for testing")
-        processed.clear()
-    
+
+    # Remove one item to force detection
+    import random
+    key_to_remove = random.choice(list(processed.keys()))
+    logger.info(f"Removing key {key_to_remove} to force change detection")
+    processed.pop(key_to_remove, None)
+
     # Save modified state
     save_state(state)
-    logger.info("Test modifications complete - run tracking to detect changes")
+    logger.info("Test modification saved. Now run tracking to detect the forced change.")
     return True
 
 if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Track changes in Smartsheet tables")
+
+    parser = argparse.ArgumentParser(description="Smartsheet Change Tracker")
     parser.add_argument("--bootstrap", action="store_true", help="Initialize tracking for all data")
     parser.add_argument("--reset", action="store_true", help="Reset tracking state to current data")
     parser.add_argument("--test", action="store_true", help="Test change detection by forcing changes")
     args = parser.parse_args()
-    
+
     if args.reset:
         success = reset_tracking_state()
     elif args.bootstrap:
@@ -396,5 +373,5 @@ if __name__ == "__main__":
         success = test_changes()
     else:
         success = track_changes()
-        
+
     exit(0 if success else 1)
