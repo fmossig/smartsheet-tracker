@@ -72,9 +72,17 @@ for group, sid in SHEET_IDS.items():
                 # Find cell with this column ID
                 for cell in row.cells:
                     if cell.column_id == col_id and cell.value:
-                        # Add to processed state
+                        # Add to processed state with normalized date (YYYY-MM-DD)
                         field_key = f"{group}:{row.id}:{date_col}"
-                        state["processed"][field_key] = cell.value
+                        # Normalize to YYYY-MM-DD format
+                        val = cell.value
+                        if hasattr(val, 'date'):
+                            val = val.date().isoformat()
+                        elif hasattr(val, 'isoformat'):
+                            val = val.isoformat()
+                        else:
+                            val = str(val).strip()[:10]  # Take just YYYY-MM-DD part
+                        state["processed"][field_key] = val
                         break
     except Exception as e:
         print(f"Error processing sheet {group}: {e}")
