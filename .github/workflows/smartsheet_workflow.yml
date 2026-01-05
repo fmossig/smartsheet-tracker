@@ -32,6 +32,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for proper git operations
+
+      - name: Pull latest changes
+        run: |
+          git config user.name 'GitHub Actions'
+          git config user.email 'actions@github.com'
+          git pull --rebase origin main || git pull origin main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -43,23 +51,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install smartsheet-python-sdk python-dotenv reportlab
 
-      # Determine current hour (UTC) to decide which scheduled task to run
+      # Determine which scheduled task to run based on the cron expression that triggered it
       - name: Determine scheduled task
         if: github.event_name == 'schedule'
         id: determine-task
         run: |
-          HOUR=$(date -u +%H)
-          DAY=$(date -u +%d)
-          WEEKDAY=$(date -u +%u)
+          # Use the actual cron expression that triggered this run
+          CRON="${{ github.event.schedule }}"
+          echo "Triggered by cron: $CRON"
           
-          if [[ "$HOUR" == "00" ]]; then
+          if [[ "$CRON" == "0 0 * * *" ]]; then
             echo "task=track" >> $GITHUB_OUTPUT
-          elif [[ "$HOUR" == "01" && "$WEEKDAY" == "1" ]]; then
+          elif [[ "$CRON" == "0 1 * * MON" ]]; then
             echo "task=weekly-report" >> $GITHUB_OUTPUT
-          elif [[ "$HOUR" == "02" && "$DAY" == "01" ]]; then
+          elif [[ "$CRON" == "0 2 1 * *" ]]; then
             echo "task=monthly-report" >> $GITHUB_OUTPUT
           else
-            echo "No scheduled task for this time."
+            echo "Unknown cron expression: $CRON"
+            echo "task=track" >> $GITHUB_OUTPUT  # Default to track
           fi
 
       - name: Run track
@@ -127,4 +136,6 @@ jobs:
           git add tracking_data/ reports/
           COMMIT_MSG="${{ github.event.inputs.action || steps.determine-task.outputs.task }} $(date +'%Y-%m-%d')"
           git commit -m "$COMMIT_MSG" || echo "No changes to commit"
+          # Pull latest before pushing to avoid conflicts with concurrent runs
+          git pull --rebase origin main || git pull origin main
           git push
