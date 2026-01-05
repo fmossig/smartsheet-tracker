@@ -1,11 +1,12 @@
 name: Smartsheet Tracking and Reporting
 
 on:
-  # Daily tracking at midnight UTC
+  # TEMPORARY: Hourly tracking for testing (revert after a few days)
   schedule:
-    - cron: '0 0 * * *'        # Daily tracking (midnight UTC)
-    - cron: '0 1 * * MON'      # Weekly report (1 AM UTC on Monday)
-    - cron: '0 2 1 * *'        # Monthly report (2 AM UTC on 1st of month)
+    - cron: '0 * * * *'        # Hourly tracking (every hour at :00)
+    # - cron: '0 0 * * *'      # Daily tracking (midnight UTC) - DISABLED FOR TESTING
+    # - cron: '0 1 * * MON'    # Weekly report (1 AM UTC on Monday) - DISABLED FOR TESTING
+    # - cron: '0 2 1 * *'      # Monthly report (2 AM UTC on 1st of month) - DISABLED FOR TEST
   
   # Manual trigger
   workflow_dispatch:
