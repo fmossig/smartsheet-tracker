@@ -10,6 +10,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pull latest changes
+        run: |
+          git config user.name 'GitHub Actions'
+          git config user.email 'actions@github.com'
+          git pull --rebase origin main || git pull origin main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -91,9 +99,16 @@ jobs:
                           # Find cell with this column ID
                           for cell in row.cells:
                               if cell.column_id == col_id and cell.value:
-                                  # Add to processed state
+                                  # Add to processed state with normalized date
                                   field_key = f"{group}:{row.id}:{date_col}"
-                                  state["processed"][field_key] = cell.value
+                                  val = cell.value
+                                  if hasattr(val, 'date'):
+                                      val = val.date().isoformat()
+                                  elif hasattr(val, 'isoformat'):
+                                      val = val.isoformat()
+                                  else:
+                                      val = str(val).strip()[:10]
+                                  state["processed"][field_key] = val
                                   break
               except Exception as e:
                   print(f"Error processing sheet {group}: {e}")
@@ -119,4 +134,5 @@ jobs:
           git config user.email 'actions@github.com'
           git add tracking_data/
           git commit -m "Reset tracking system" || echo "No changes to commit"
+          git pull --rebase origin main || git pull origin main
           git push
