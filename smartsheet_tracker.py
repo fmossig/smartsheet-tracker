@@ -129,6 +129,26 @@ def parse_date(value):
     except Exception:
         return None
 
+def normalize_date_for_comparison(value):
+    """Normalize any date value to YYYY-MM-DD string for consistent comparison.
+    
+    This handles various formats that Smartsheet might return:
+    - datetime.date objects -> '2025-10-23'
+    - datetime.datetime objects -> '2025-10-23' (time stripped)
+    - ISO strings '2025-10-23T00:00:00' -> '2025-10-23'
+    - Date strings '2025-10-23' -> '2025-10-23'
+    """
+    if value is None:
+        return None
+    
+    # Try to parse as date first
+    parsed = parse_date(value)
+    if parsed:
+        return parsed.isoformat()  # Always returns YYYY-MM-DD
+    
+    # Fallback to string representation
+    return str(value).strip()
+
 def track_changes():
     """Main function to track changes in Smartsheet tables."""
     logger.info("Starting Smartsheet change tracking")
@@ -224,18 +244,19 @@ def track_changes():
                         # Create unique key for this field
                         field_key = f"{group}:{row.id}:{date_col}"
 
-                        # Check if changed - EXPLICITLY CAST BOTH TO STRING FOR COMPARISON
-                        str_date_val = str(date_val).strip()
+                        # Normalize both values for robust comparison
+                        # This handles format differences (datetime vs date vs string)
+                        normalized_current = normalize_date_for_comparison(date_val)
                         prev_val = state["processed"].get(field_key)
-                        str_prev_val = str(prev_val).strip() if prev_val is not None else None
+                        normalized_prev = normalize_date_for_comparison(prev_val)
 
-                        if str_prev_val == str_date_val:
+                        if normalized_prev == normalized_current:
                             continue
 
                         # Only log detailed info for changes
                         logger.info(f"Change detected in {field_key}")
-                        logger.info(f"  Previous: '{prev_val}'")
-                        logger.info(f"  Current:  '{date_val}'")
+                        logger.info(f"  Previous: '{prev_val}' (normalized: '{normalized_prev}')")
+                        logger.info(f"  Current:  '{date_val}' (normalized: '{normalized_current}')")
 
                         # Parse date
                         parsed_date = parse_date(date_val)
@@ -255,8 +276,8 @@ def track_changes():
                             marketplace
                         ])
 
-                        # Update state for this field (JSON-safe)
-                        state["processed"][field_key] = str_date_val
+                        # Update state with normalized date (always YYYY-MM-DD)
+                        state["processed"][field_key] = normalized_current
 
                         changes_found += 1
 
@@ -297,9 +318,9 @@ def reset_tracking_state():
                 # Find cell with this column ID
                 for cell in row.cells:
                     if cell.column_id == col_id and cell.value:
-                        # Add to processed state
+                        # Add to processed state with normalized date
                         field_key = f"{group}:{row.id}:{date_col}"
-                        state["processed"][field_key] = str(cell.value).strip()
+                        state["processed"][field_key] = normalize_date_for_comparison(cell.value)
                         break
 
     # Save state
