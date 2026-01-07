@@ -41,8 +41,15 @@ token = os.getenv("SMARTSHEET_TOKEN")
 
 # Configuration - These sheet IDs will be set after creation or manually configured
 # You can set these as environment variables or update after running --setup
-STATUS_SHEET_ID = os.getenv("STATUS_SHEET_ID")
-WEEKLY_STATS_SHEET_ID = os.getenv("WEEKLY_STATS_SHEET_ID")
+# Handle empty strings from GitHub Actions when secrets don't exist
+STATUS_SHEET_ID = os.getenv("STATUS_SHEET_ID") or None
+WEEKLY_STATS_SHEET_ID = os.getenv("WEEKLY_STATS_SHEET_ID") or None
+
+# Convert empty strings to None
+if STATUS_SHEET_ID == "":
+    STATUS_SHEET_ID = None
+if WEEKLY_STATS_SHEET_ID == "":
+    WEEKLY_STATS_SHEET_ID = None
 
 # Data files
 DATA_DIR = "tracking_data"
