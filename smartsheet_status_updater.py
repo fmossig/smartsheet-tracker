@@ -42,6 +42,7 @@ token = os.getenv("SMARTSHEET_TOKEN")
 # Configuration - Sheet IDs for status and stats tracking
 STATUS_SHEET_ID = 1175618067582852
 WEEKLY_STATS_SHEET_ID = 5679217694953348
+DAILY_STATS_SHEET_ID = None  # Will be set after running --setup-daily
 
 # Data files
 DATA_DIR = "tracking_data"
@@ -51,6 +52,7 @@ STATE_FILE = os.path.join(DATA_DIR, "tracker_state.json")
 # Sheet configurations
 STATUS_SHEET_NAME = "Amazon Content Management - System Status"
 WEEKLY_STATS_SHEET_NAME = "Amazon Content Management - Weekly Stats"
+DAILY_STATS_SHEET_NAME = "Amazon Content Management - Daily Activity"
 
 STATUS_COLUMNS = [
     {"title": "Timestamp", "type": "TEXT_NUMBER", "width": 150},
@@ -61,6 +63,28 @@ STATUS_COLUMNS = [
     {"title": "Errors", "type": "TEXT_NUMBER", "width": 80},
     {"title": "Duration (sec)", "type": "TEXT_NUMBER", "width": 100},
     {"title": "Details", "type": "TEXT_NUMBER", "width": 300},
+]
+
+# Daily stats columns - one row per day, columns for each user (for stacked bar chart)
+DAILY_STATS_COLUMNS = [
+    {"title": "Date", "type": "DATE", "width": 100},
+    {"title": "Day", "type": "TEXT_NUMBER", "width": 80},  # Mon, Tue, etc.
+    {"title": "Total", "type": "TEXT_NUMBER", "width": 70},
+    # Per-user columns for stacked bar chart
+    {"title": "DM", "type": "TEXT_NUMBER", "width": 60},
+    {"title": "EK", "type": "TEXT_NUMBER", "width": 60},
+    {"title": "HI", "type": "TEXT_NUMBER", "width": 60},
+    {"title": "JHU", "type": "TEXT_NUMBER", "width": 60},
+    {"title": "LK", "type": "TEXT_NUMBER", "width": 60},
+    {"title": "SM", "type": "TEXT_NUMBER", "width": 60},
+    # Per-group columns (optional, for group breakdown)
+    {"title": "NA", "type": "TEXT_NUMBER", "width": 50},
+    {"title": "NF", "type": "TEXT_NUMBER", "width": 50},
+    {"title": "NH", "type": "TEXT_NUMBER", "width": 50},
+    {"title": "NM", "type": "TEXT_NUMBER", "width": 50},
+    {"title": "NP", "type": "TEXT_NUMBER", "width": 50},
+    {"title": "NT", "type": "TEXT_NUMBER", "width": 50},
+    {"title": "NV", "type": "TEXT_NUMBER", "width": 50},
 ]
 
 WEEKLY_STATS_COLUMNS = [
@@ -440,6 +464,143 @@ def mark_report_generated(year, week):
         return False
 
 
+def setup_daily_sheet():
+    """Create the daily stats sheet."""
+    client = get_client()
+    if not client:
+        return None
+    
+    sheet_id = create_sheet(client, DAILY_STATS_SHEET_NAME, DAILY_STATS_COLUMNS)
+    if sheet_id:
+        print(f"\nDAILY_STATS_SHEET_ID={sheet_id}")
+        print("Update this value in smartsheet_status_updater.py\n")
+    return sheet_id
+
+
+def calculate_daily_stats(target_date):
+    """Calculate statistics for a single day."""
+    changes = load_changes(target_date, target_date)
+    
+    stats = {
+        "date": target_date,
+        "day": target_date.strftime("%a"),  # Mon, Tue, etc.
+        "total": len(changes),
+        "users": defaultdict(int),
+        "groups": defaultdict(int),
+    }
+    
+    for change in changes:
+        user = change.get('User', '').strip()
+        group = change.get('Group', '').strip()
+        
+        if user:
+            stats["users"][user] += 1
+        if group:
+            stats["groups"][group] += 1
+    
+    return stats
+
+
+def push_daily_stats(days=14):
+    """Push daily statistics for the last N days to the Daily Stats sheet."""
+    if not DAILY_STATS_SHEET_ID:
+        logger.warning("DAILY_STATS_SHEET_ID not configured. Run --setup-daily first.")
+        return False
+    
+    client = get_client()
+    if not client:
+        return False
+    
+    try:
+        col_map = get_column_map(client, int(DAILY_STATS_SHEET_ID))
+        if not col_map:
+            return False
+        
+        # Get existing rows to check for duplicates
+        sheet = client.Sheets.get_sheet(int(DAILY_STATS_SHEET_ID))
+        date_col_id = col_map.get("Date")
+        
+        existing_dates = set()
+        existing_rows = {}  # date_str -> row_id
+        if date_col_id:
+            for row in sheet.rows:
+                for cell in row.cells:
+                    if cell.column_id == date_col_id and cell.value:
+                        date_str = str(cell.value)[:10]  # Get YYYY-MM-DD part
+                        existing_dates.add(date_str)
+                        existing_rows[date_str] = row.id
+        
+        # Calculate stats for each day
+        today = date.today()
+        rows_to_add = []
+        rows_to_update = []
+        
+        for i in range(days):
+            target_date = today - timedelta(days=i)
+            date_str = target_date.isoformat()
+            
+            stats = calculate_daily_stats(target_date)
+            
+            # Build cells
+            cells = [
+                {"column_id": col_map.get("Date"), "value": date_str},
+                {"column_id": col_map.get("Day"), "value": stats["day"]},
+                {"column_id": col_map.get("Total"), "value": stats["total"]},
+            ]
+            
+            # Add per-user stats
+            for user in ["DM", "EK", "HI", "JHU", "LK", "SM"]:
+                col_id = col_map.get(user)
+                if col_id:
+                    cells.append({"column_id": col_id, "value": stats["users"].get(user, 0)})
+            
+            # Add per-group stats
+            for group in ["NA", "NF", "NH", "NM", "NP", "NT", "NV"]:
+                col_id = col_map.get(group)
+                if col_id:
+                    cells.append({"column_id": col_id, "value": stats["groups"].get(group, 0)})
+            
+            # Filter out cells with None column_id
+            cells = [c for c in cells if c["column_id"]]
+            
+            if date_str in existing_dates:
+                # Update existing row
+                update_row = smartsheet.models.Row()
+                update_row.id = existing_rows[date_str]
+                update_row.cells = cells
+                rows_to_update.append(update_row)
+            else:
+                # Add new row
+                new_row = smartsheet.models.Row()
+                new_row.to_top = True
+                new_row.cells = cells
+                rows_to_add.append(new_row)
+        
+        # Batch update existing rows
+        if rows_to_update:
+            client.Sheets.update_rows(int(DAILY_STATS_SHEET_ID), rows_to_update)
+            logger.info(f"Updated {len(rows_to_update)} existing daily rows")
+        
+        # Batch add new rows
+        if rows_to_add:
+            client.Sheets.add_rows(int(DAILY_STATS_SHEET_ID), rows_to_add)
+            logger.info(f"Added {len(rows_to_add)} new daily rows")
+        
+        # Push status update
+        push_status_update(
+            run_type="daily_stats",
+            status="success",
+            details=f"Updated {days} days of daily stats"
+        )
+        
+        logger.info(f"Daily stats pushed for last {days} days")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to push daily stats: {e}")
+        return False
+
+
 def get_tracking_summary():
     """Get a summary of current tracking state."""
     summary = {
@@ -471,9 +632,12 @@ def get_tracking_summary():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Smartsheet Status Updater")
-    parser.add_argument("--setup", action="store_true", help="Create status and stats sheets")
+    parser.add_argument("--setup", action="store_true", help="Create status and weekly stats sheets")
+    parser.add_argument("--setup-daily", action="store_true", help="Create daily stats sheet")
     parser.add_argument("--status", action="store_true", help="Push a status update")
     parser.add_argument("--weekly-stats", action="store_true", help="Push weekly statistics")
+    parser.add_argument("--daily-stats", action="store_true", help="Push daily statistics (last 14 days)")
+    parser.add_argument("--days", type=int, default=14, help="Number of days for daily stats (default: 14)")
     parser.add_argument("--year", type=int, help="Year for weekly stats")
     parser.add_argument("--week", type=int, help="Week number for weekly stats")
     parser.add_argument("--run-type", default="manual", help="Run type for status update")
@@ -484,6 +648,8 @@ if __name__ == "__main__":
     
     if args.setup:
         setup_sheets()
+    elif args.setup_daily:
+        setup_daily_sheet()
     elif args.status:
         summary = get_tracking_summary()
         push_status_update(
@@ -495,6 +661,8 @@ if __name__ == "__main__":
         )
     elif args.weekly_stats:
         push_weekly_stats(args.year, args.week)
+    elif args.daily_stats:
+        push_daily_stats(args.days)
     elif args.mark_report:
         if args.year and args.week:
             mark_report_generated(args.year, args.week)
