@@ -52,7 +52,7 @@ STATE_FILE = os.path.join(DATA_DIR, "tracker_state.json")
 # Sheet configurations
 STATUS_SHEET_NAME = "Amazon Content Management - System Status"
 WEEKLY_STATS_SHEET_NAME = "Amazon Content Management - Weekly Stats"
-DAILY_STATS_SHEET_NAME = "Amazon Content Management - Daily Activity"
+DAILY_STATS_SHEET_NAME = "ACM - Daily Activity"
 
 STATUS_COLUMNS = [
     {"title": "Timestamp", "type": "TEXT_NUMBER", "width": 150},
