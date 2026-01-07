@@ -23,6 +23,8 @@ on:
           - bootstrap
           - reset
           - test-changes
+          - setup-status-sheets
+          - push-weekly-stats
 
 permissions:
   contents: write
@@ -117,7 +119,22 @@ jobs:
         run: |
           python smartsheet_tracker.py --test
           python smartsheet_tracker.py
+          
+      - name: Setup status sheets
+        if: github.event.inputs.action == 'setup-status-sheets'
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: |
+          python smartsheet_status_updater.py --setup
 
+      - name: Push weekly stats manually
+        if: github.event.inputs.action == 'push-weekly-stats'
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+          WEEKLY_STATS_SHEET_ID: ${{ secrets.WEEKLY_STATS_SHEET_ID }}
+        run: |
+          python smartsheet_status_updater.py --weekly-stats
+          
       - name: Upload log file
         if: always()
         uses: actions/upload-artifact@v4
