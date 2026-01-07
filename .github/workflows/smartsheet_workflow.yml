@@ -25,6 +25,7 @@ on:
           - test-changes
           - setup-status-sheets
           - push-weekly-stats
+          - push-daily-stats
 
 permissions:
   contents: write
@@ -134,6 +135,12 @@ jobs:
           WEEKLY_STATS_SHEET_ID: ${{ secrets.WEEKLY_STATS_SHEET_ID }}
         run: |
           python smartsheet_status_updater.py --weekly-stats
+      - name: Push daily stats
+        if: github.event.inputs.action == 'push-daily-stats'
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: |
+          python smartsheet_status_updater.py --daily-stats --days 14
           
       - name: Upload log file
         if: always()
