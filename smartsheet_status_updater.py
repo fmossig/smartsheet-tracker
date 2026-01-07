@@ -42,7 +42,7 @@ token = os.getenv("SMARTSHEET_TOKEN")
 # Configuration - Sheet IDs for status and stats tracking
 STATUS_SHEET_ID = 1175618067582852
 WEEKLY_STATS_SHEET_ID = 5679217694953348
-DAILY_STATS_SHEET_ID = None  # Will be set after running --setup-daily
+DAILY_STATS_SHEET_ID = 8081126615633796
 
 # Data files
 DATA_DIR = "tracking_data"
