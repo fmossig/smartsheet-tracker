@@ -41,8 +41,8 @@ token = os.getenv("SMARTSHEET_TOKEN")
 
 # Configuration - These sheet IDs will be set after creation or manually configured
 # You can set these as environment variables or update after running --setup
-STATUS_SHEET_ID = 7830446554435460
-WEEKLY_STATS_SHEET_ID = 8503626843508612
+STATUS_SHEET_ID = os.getenv("STATUS_SHEET_ID")
+WEEKLY_STATS_SHEET_ID = os.getenv("WEEKLY_STATS_SHEET_ID")
 
 # Data files
 DATA_DIR = "tracking_data"
