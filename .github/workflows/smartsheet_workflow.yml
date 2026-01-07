@@ -23,6 +23,7 @@ on:
           - bootstrap
           - reset
           - test-changes
+          - setup-daily-sheet
           - setup-status-sheets
           - push-weekly-stats
           - push-daily-stats
@@ -135,6 +136,12 @@ jobs:
           WEEKLY_STATS_SHEET_ID: ${{ secrets.WEEKLY_STATS_SHEET_ID }}
         run: |
           python smartsheet_status_updater.py --weekly-stats
+      - name: Setup daily sheet
+        if: github.event.inputs.action == 'setup-daily-sheet'
+        env:
+          SMARTSHEET_TOKEN: ${{ secrets.SMARTSHEET_TOKEN }}
+        run: |
+          python smartsheet_status_updater.py --setup-daily
       - name: Push daily stats
         if: github.event.inputs.action == 'push-daily-stats'
         env:
