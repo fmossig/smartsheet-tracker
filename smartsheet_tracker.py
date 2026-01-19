@@ -3,9 +3,28 @@ import csv
 import json
 from datetime import datetime, timedelta, date
 import logging
+from typing import Optional, Dict, Any
 
 import smartsheet
 from dotenv import load_dotenv
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+# Import centralized configuration
+from config import (
+    SHEET_IDS,
+    PHASE_FIELDS,
+    DATA_DIR,
+    STATE_FILE,
+    CHANGES_FILE,
+    CHANGE_HISTORY_COLUMNS,
+    DATE_FORMATS,
+    TIMESTAMP_FORMAT,
+    API_MAX_RETRIES,
+    API_RETRY_DELAY,
+    API_RETRY_MULTIPLIER,
+    API_RETRY_MAX_DELAY,
+    ensure_directories,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -25,33 +44,8 @@ if not token:
     logger.error("SMARTSHEET_TOKEN not found in environment or .env file")
     exit(1)
 
-# Smartsheet IDs and columns to track
-SHEET_IDS = {
-    "NA": 6141179298008964,
-    "NF": 615755411312516,
-    "NH": 123340632051588,
-    "NP": 3009924800925572,
-    "NT": 2199739350077316,
-    "NV": 8955413669040004,
-    "NM": 4275419734822788,
-}
-
-# Fields to track - (date_column, user_column, phase_number)
-PHASE_FIELDS = [
-    ("Kontrolle", "K von", 1),
-    ("BE am", "BE von", 2),
-    ("K am", "K2 von", 3),
-    ("C am", "C von", 4),
-    ("Reopen C2 am", "Reopen C2 von", 5),
-]
-
-# Directory to store data
-DATA_DIR = "tracking_data"
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# State file to track what we've already processed
-STATE_FILE = os.path.join(DATA_DIR, "tracker_state.json")
-CHANGES_FILE = os.path.join(DATA_DIR, "change_history.csv")
+# Ensure data directories exist
+ensure_directories()
 
 def load_state():
     """Load previously saved state or create empty state."""
@@ -82,19 +76,10 @@ def ensure_changes_file():
     if not os.path.exists(CHANGES_FILE):
         with open(CHANGES_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "Timestamp",
-                "Group",
-                "RowID",
-                "Phase",
-                "DateField",
-                "Date",
-                "User",
-                "Marketplace"
-            ])
+            writer.writerow(CHANGE_HISTORY_COLUMNS)
             logger.info(f"Created new changes file: {CHANGES_FILE}")
 
-def parse_date(value):
+def parse_date(value) -> Optional[date]:
     """Parse date from Smartsheet cell values (string/date/datetime).
 
     Smartsheet may return date columns as datetime.date / datetime.datetime objects
@@ -116,8 +101,8 @@ def parse_date(value):
     if cleaned and not cleaned[-1].isdigit():
         cleaned = cleaned.rstrip('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
 
-    # Try various formats
-    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d.%m.%Y', '%m/%d/%Y', '%Y/%m/%d'):
+    # Try various formats from config
+    for fmt in DATE_FORMATS:
         try:
             return datetime.strptime(cleaned, fmt).date()
         except ValueError:
@@ -149,7 +134,35 @@ def normalize_date_for_comparison(value):
     # Fallback to string representation
     return str(value).strip()
 
-def track_changes():
+
+# Retry decorator for API calls
+@retry(
+    stop=stop_after_attempt(API_MAX_RETRIES),
+    wait=wait_exponential(multiplier=API_RETRY_DELAY, min=API_RETRY_DELAY, max=API_RETRY_MAX_DELAY),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=lambda retry_state: logger.warning(
+        f"API call failed, retrying in {retry_state.next_action.sleep} seconds... "
+        f"(attempt {retry_state.attempt_number}/{API_MAX_RETRIES})"
+    )
+)
+def fetch_sheet_with_retry(client: smartsheet.Smartsheet, sheet_id: int):
+    """Fetch a sheet from Smartsheet with automatic retry on failure."""
+    return client.Sheets.get_sheet(sheet_id)
+
+
+def get_smartsheet_client() -> Optional[smartsheet.Smartsheet]:
+    """Create and return a Smartsheet client, or None if connection fails."""
+    try:
+        client = smartsheet.Smartsheet(token)
+        client.errors_as_exceptions(True)
+        logger.info("Connected to Smartsheet API")
+        return client
+    except Exception as e:
+        logger.error(f"Failed to connect to Smartsheet: {e}")
+        return None
+
+
+def track_changes() -> bool:
     """Main function to track changes in Smartsheet tables."""
     logger.info("Starting Smartsheet change tracking")
 
@@ -158,12 +171,8 @@ def track_changes():
     ensure_changes_file()
 
     # Connect to Smartsheet
-    try:
-        client = smartsheet.Smartsheet(token)
-        client.errors_as_exceptions(True)
-        logger.info("Connected to Smartsheet API")
-    except Exception as e:
-        logger.error(f"Failed to connect to Smartsheet: {e}")
+    client = get_smartsheet_client()
+    if not client:
         return False
 
     # Verify state format and structure
@@ -197,8 +206,8 @@ def track_changes():
             logger.info(f"Processing sheet {group} (ID: {sheet_id})")
 
             try:
-                # Get sheet with columns and rows
-                sheet = client.Sheets.get_sheet(sheet_id)
+                # Get sheet with columns and rows (with retry)
+                sheet = fetch_sheet_with_retry(client, sheet_id)
                 logger.info(f"Sheet {group} has {len(sheet.rows)} rows")
 
                 # Map column titles to IDs
@@ -292,18 +301,25 @@ def track_changes():
     logger.info(f"Change tracking completed. Found {changes_found} changes.")
     return True
 
-def reset_tracking_state():
+def reset_tracking_state() -> bool:
     """Reset the tracking state to current Smartsheet data."""
     logger.info("Resetting tracking state...")
 
     # Connect to Smartsheet
-    client = smartsheet.Smartsheet(token)
-    state = {"last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "processed": {}}
+    client = get_smartsheet_client()
+    if not client:
+        return False
+
+    state = {"last_run": datetime.now().strftime(TIMESTAMP_FORMAT), "processed": {}}
 
     # Process each sheet to build state
     for group, sid in SHEET_IDS.items():
         logger.info(f"Processing sheet {group}...")
-        sheet = client.Sheets.get_sheet(sid)
+        try:
+            sheet = fetch_sheet_with_retry(client, sid)
+        except Exception as e:
+            logger.error(f"Failed to fetch sheet {group} after retries: {e}")
+            continue
 
         # Map column titles to IDs
         col_map = {col.title: col.id for col in sheet.columns}
@@ -329,16 +345,7 @@ def reset_tracking_state():
     # Reset change history file
     with open(CHANGES_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "Timestamp",
-            "Group",
-            "RowID",
-            "Phase",
-            "DateField",
-            "Date",
-            "User",
-            "Marketplace"
-        ])
+        writer.writerow(CHANGE_HISTORY_COLUMNS)
 
     logger.info(f"Reset complete: Marked {len(state['processed'])} items as processed")
     return True
