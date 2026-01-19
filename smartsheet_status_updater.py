@@ -20,9 +20,28 @@ import argparse
 import logging
 from datetime import datetime, date, timedelta
 from collections import defaultdict
+from typing import Dict, List, Optional, Any
 
 import smartsheet
 from dotenv import load_dotenv
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+# Import centralized configuration
+from config import (
+    STATUS_SHEET_ID,
+    WEEKLY_STATS_SHEET_ID,
+    DAILY_STATS_SHEET_ID,
+    DATA_DIR,
+    CHANGES_FILE,
+    STATE_FILE,
+    USERS,
+    SHEET_IDS,
+    TIMESTAMP_FORMAT,
+    API_MAX_RETRIES,
+    API_RETRY_DELAY,
+    API_RETRY_MAX_DELAY,
+    get_product_groups,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -38,16 +57,6 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 token = os.getenv("SMARTSHEET_TOKEN")
-
-# Configuration - Sheet IDs for status and stats tracking
-STATUS_SHEET_ID = 1175618067582852
-WEEKLY_STATS_SHEET_ID = 5679217694953348
-DAILY_STATS_SHEET_ID = 8081126615633796
-
-# Data files
-DATA_DIR = "tracking_data"
-CHANGES_FILE = os.path.join(DATA_DIR, "change_history.csv")
-STATE_FILE = os.path.join(DATA_DIR, "tracker_state.json")
 
 # Sheet configurations
 STATUS_SHEET_NAME = "Amazon Content Management - System Status"
@@ -120,12 +129,12 @@ WEEKLY_STATS_COLUMNS = [
 ]
 
 
-def get_client():
+def get_client() -> Optional[smartsheet.Smartsheet]:
     """Get authenticated Smartsheet client."""
     if not token:
         logger.error("SMARTSHEET_TOKEN not found in environment")
         return None
-    
+
     try:
         client = smartsheet.Smartsheet(token)
         client.errors_as_exceptions(True)
@@ -133,6 +142,21 @@ def get_client():
     except Exception as e:
         logger.error(f"Failed to connect to Smartsheet: {e}")
         return None
+
+
+# Retry decorator for API calls
+@retry(
+    stop=stop_after_attempt(API_MAX_RETRIES),
+    wait=wait_exponential(multiplier=API_RETRY_DELAY, min=API_RETRY_DELAY, max=API_RETRY_MAX_DELAY),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=lambda retry_state: logger.warning(
+        f"API call failed, retrying in {retry_state.next_action.sleep} seconds... "
+        f"(attempt {retry_state.attempt_number}/{API_MAX_RETRIES})"
+    )
+)
+def get_sheet_with_retry(client: smartsheet.Smartsheet, sheet_id: int):
+    """Fetch a sheet from Smartsheet with automatic retry on failure."""
+    return client.Sheets.get_sheet(sheet_id)
 
 
 def create_sheet(client, name, columns):
@@ -370,13 +394,13 @@ def push_weekly_stats(year=None, week=None):
         ]
         
         # Add per-user stats
-        for user in ["DM", "EK", "HI", "JHU", "LK", "SM"]:
+        for user in USERS:
             col_id = col_map.get(user)
             if col_id:
                 cells.append({"column_id": col_id, "value": stats["users"].get(user, 0)})
         
         # Add per-group stats
-        for group in ["NA", "NF", "NH", "NM", "NP", "NT", "NV"]:
+        for group in get_product_groups():
             col_id = col_map.get(group)
             if col_id:
                 cells.append({"column_id": col_id, "value": stats["groups"].get(group, 0)})
@@ -549,13 +573,13 @@ def push_daily_stats(days=14):
             ]
             
             # Add per-user stats
-            for user in ["DM", "EK", "HI", "JHU", "LK", "SM"]:
+            for user in USERS:
                 col_id = col_map.get(user)
                 if col_id:
                     cells.append({"column_id": col_id, "value": stats["users"].get(user, 0)})
             
             # Add per-group stats
-            for group in ["NA", "NF", "NH", "NM", "NP", "NT", "NV"]:
+            for group in get_product_groups():
                 col_id = col_map.get(group)
                 if col_id:
                     cells.append({"column_id": col_id, "value": stats["groups"].get(group, 0)})
