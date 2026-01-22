@@ -1142,10 +1142,10 @@ def get_special_activities(start_date, end_date):
         sheet = client.Sheets.get_sheet(sheet_id)
         
         col_map = {col.title: col.id for col in sheet.columns}
-        user_col_id = col_map.get("Wer")
+        user_col_id = col_map.get("Mitarbeiter")
         date_col_id = col_map.get("Datum")
         category_col_id = col_map.get("Kategorie")
-        duration_col_id = col_map.get("Zeitaufwand (Stunden)")
+        duration_col_id = col_map.get("Arbeitszeit in Std")
         
         if not all([user_col_id, date_col_id, category_col_id, duration_col_id]):
             return {}, 0, 0
@@ -1158,7 +1158,13 @@ def get_special_activities(start_date, end_date):
             date_cell = row.get_column(date_col_id)
             if date_cell and date_cell.value:
                 try:
-                    activity_date = datetime.strptime(date_cell.value, '%Y-%m-%d').date()
+                    # Handle multiple date formats from Smartsheet
+                    date_str = str(date_cell.value)
+                    if 'T' in date_str:
+                        # ISO format: 2025-02-05T00:00:00Z or 2025-02-05T00:00:00
+                        activity_date = datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                    else:
+                        activity_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
                     if start_date <= activity_date <= end_date:
                         user = row.get_column(user_col_id)
                         user = user.value if user else "Unassigned"
@@ -1879,10 +1885,10 @@ def get_user_special_activities_data(user_name, start_date, end_date):
         sheet = client.Sheets.get_sheet(sheet_id)
         
         col_map = {col.title: col.id for col in sheet.columns}
-        user_col_id = col_map.get("Wer")
+        user_col_id = col_map.get("Mitarbeiter")
         date_col_id = col_map.get("Datum")
         category_col_id = col_map.get("Kategorie")
-        duration_col_id = col_map.get("Zeitaufwand (Stunden)")
+        duration_col_id = col_map.get("Arbeitszeit in Std")
         
         if not all([user_col_id, date_col_id, category_col_id, duration_col_id]):
             return {}, 0, 0
@@ -1901,7 +1907,12 @@ def get_user_special_activities_data(user_name, start_date, end_date):
             date_cell = row.get_column(date_col_id)
             if date_cell and date_cell.value:
                 try:
-                    activity_date = datetime.strptime(date_cell.value, '%Y-%m-%d').date()
+                    # Handle multiple date formats from Smartsheet
+                    date_str = str(date_cell.value)
+                    if 'T' in date_str:
+                        activity_date = datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                    else:
+                        activity_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
                     if not (start_date <= activity_date <= end_date):
                         continue
                 except:
