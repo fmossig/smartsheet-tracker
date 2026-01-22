@@ -2245,14 +2245,91 @@ def build_special_activities_page(story, styles, start_date, end_date, content_w
     story.append(Spacer(1, DesignSystem.SPACE_SM))
     story.append(card_table)
     story.append(Spacer(1, DesignSystem.SPACE_LG))
-    
+
     # Category breakdown
     category_hours = defaultdict(float)
     for user_data in user_activity.values():
         for cat, hours in user_data.get("categories", {}).items():
             category_hours[cat] += hours
-    
+
     if category_hours:
+        # Define colors for categories
+        category_colors = [
+            colors.HexColor("#223459"),  # Dark Navy
+            colors.HexColor("#6A5AAA"),  # Purple
+            colors.HexColor("#B45082"),  # Magenta
+            colors.HexColor("#F9767F"),  # Coral
+            colors.HexColor("#FFB142"),  # Orange
+            colors.HexColor("#10B981"),  # Emerald
+            colors.HexColor("#3B82F6"),  # Blue
+            colors.HexColor("#8B5CF6"),  # Violet
+            colors.HexColor("#EC4899"),  # Pink
+            colors.HexColor("#F59E0B"),  # Amber
+        ]
+
+        # Sort categories by hours
+        sorted_cats = sorted(category_hours.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        # Create color map for donut chart
+        color_map = {}
+        for i, (cat, _) in enumerate(sorted_cats):
+            color_map[cat] = category_colors[i % len(category_colors)]
+
+        # Create donut chart for category distribution
+        story.append(Paragraph("Category Distribution", styles['SubsectionHeader']))
+        story.append(Spacer(1, DesignSystem.SPACE_SM))
+
+        # Donut chart with legend side by side
+        donut_data = {cat: hours for cat, hours in sorted_cats}
+        donut_chart = create_donut_chart(
+            donut_data,
+            f"Total: {total_hours:.1f}h",
+            width=180,
+            height=160,
+            color_map=color_map
+        )
+
+        # Create legend
+        legend_data = []
+        for i, (cat, hours) in enumerate(sorted_cats):
+            color_cell = Table(
+                [[""]],
+                colWidths=[8*mm],
+                rowHeights=[4*mm]
+            )
+            color_cell.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, 0), category_colors[i % len(category_colors)]),
+                ('LINEBELOW', (0, 0), (0, 0), 0, DesignSystem.WHITE),
+            ]))
+            display_cat = cat if len(cat) <= 25 else cat[:22] + "..."
+            share = f"{hours/total_hours*100:.1f}%" if total_hours > 0 else "0%"
+            legend_data.append([color_cell, display_cat, f"{hours:.1f}h", share])
+
+        legend_table = Table(legend_data, colWidths=[10*mm, 55*mm, 18*mm, 15*mm])
+        legend_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), DesignSystem.FONT_FAMILY),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('TEXTCOLOR', (1, 0), (-1, -1), DesignSystem.GRAY_600),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+
+        # Combine chart and legend in a table
+        chart_legend_table = Table(
+            [[donut_chart, legend_table]],
+            colWidths=[65*mm, content_width - 70*mm]
+        )
+        chart_legend_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ]))
+
+        story.append(chart_legend_table)
+        story.append(Spacer(1, DesignSystem.SPACE_LG))
+
+        # Detailed table
         story.append(Paragraph("Hours by Category", styles['SubsectionHeader']))
         
         # Sort and limit categories
@@ -2281,8 +2358,86 @@ def build_special_activities_page(story, styles, start_date, end_date, content_w
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
             ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ]))
-        
+
         story.append(table)
+
+    # Individual breakdown per employee
+    if user_activity:
+        story.append(Spacer(1, DesignSystem.SPACE_XL))
+        story.append(Paragraph("Individual Special Activities", styles['SubsectionHeader']))
+        story.append(Paragraph(
+            "Detailed breakdown of special activities per team member",
+            styles['ReportBody']
+        ))
+        story.append(Spacer(1, DesignSystem.SPACE_MD))
+
+        # Sort users by total hours (descending)
+        sorted_users = sorted(
+            user_activity.items(),
+            key=lambda x: x[1].get("hours", 0),
+            reverse=True
+        )
+
+        # Create a table for each user
+        for user_name, user_data in sorted_users:
+            user_hours = user_data.get("hours", 0)
+            user_count = user_data.get("count", 0)
+            user_categories = user_data.get("categories", {})
+
+            if not user_categories:
+                continue
+
+            # Get user color from config
+            user_color = USER_COLORS.get(user_name, DesignSystem.PRIMARY)
+
+            # User header with colored bar
+            user_header = Table(
+                [[f"  {user_name}", f"{user_hours:.1f}h total  |  {user_count} activities"]],
+                colWidths=[content_width * 0.5, content_width * 0.5]
+            )
+            user_header.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), user_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), DesignSystem.WHITE),
+                ('FONTNAME', (0, 0), (0, 0), DesignSystem.FONT_BOLD),
+                ('FONTNAME', (1, 0), (1, 0), DesignSystem.FONT_FAMILY),
+                ('FONTSIZE', (0, 0), (-1, -1), DesignSystem.FONT_SIZE_SM),
+                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+
+            story.append(user_header)
+
+            # User's category breakdown table
+            sorted_user_cats = sorted(user_categories.items(), key=lambda x: x[1], reverse=True)
+            user_table_data = [["Category", "Hours", "Share"]]
+
+            for cat, hours in sorted_user_cats:
+                share = f"{hours/user_hours*100:.1f}%" if user_hours > 0 else "0%"
+                display_cat = cat if len(cat) <= 40 else cat[:37] + "..."
+                user_table_data.append([display_cat, f"{hours:.1f}", share])
+
+            user_table = Table(user_table_data, colWidths=[90*mm, 30*mm, 30*mm])
+            user_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), DesignSystem.GRAY_100),
+                ('TEXTCOLOR', (0, 0), (-1, 0), DesignSystem.GRAY_700),
+                ('FONTNAME', (0, 0), (-1, 0), DesignSystem.FONT_BOLD),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('FONTNAME', (0, 1), (-1, -1), DesignSystem.FONT_FAMILY),
+                ('TEXTCOLOR', (0, 1), (-1, -1), DesignSystem.GRAY_600),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [DesignSystem.WHITE, DesignSystem.GRAY_50]),
+                ('LINEBELOW', (0, 0), (-1, -1), 0.5, DesignSystem.GRAY_200),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ]))
+
+            story.append(user_table)
+            story.append(Spacer(1, DesignSystem.SPACE_MD))
 
 
 # =============================================================================
