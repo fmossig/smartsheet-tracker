@@ -2398,8 +2398,8 @@ def build_special_activities_page(story, styles, start_date, end_date, content_w
             if not user_categories:
                 continue
 
-            # Get user color from config
-            user_color = USER_COLORS.get(user_name, DesignSystem.PRIMARY)
+            # Get user color from DesignSystem
+            user_color = DesignSystem.get_user_color(user_name)
 
             # User header with colored bar
             user_header = Table(
